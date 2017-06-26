@@ -22,6 +22,13 @@ the pod created by ReplicationController/ReplicaSet won't be scheduled. And beca
 In the end of the move operation, we restore the scheduler name of the ReplicationController/ReplicaSet.
 
 
+# Test it #
 
+```console
+go build
+
+./movePod --kubeConfig configs/aws.kubeconfig.yaml --v 3 --nameSpace default --podName mem-deployment-4234284026-m0j41 --nodeName ip-172-23-1-12.us-west-2.compute.internal
+
+```
 
 
