@@ -77,6 +77,10 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 	case "ReplicaSet":
 		glog.V(2).Infof("pod-%v parent is a ReplicaSet-%v", id, parentName)
 		f = updateRSscheduler
+	default:
+		err = fmt.Errorf("unsupported parent-[%v] Kind-[%v]", parentName, parentKind)
+		glog.Warning(err.Error())
+		return err
 	}
 
 	preScheduler, err := f(client, nameSpace, parentName, *noexistSchedulerName)
@@ -94,7 +98,6 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 		return err
 	}
 
-	//4. check the new Pod
 	return nil
 }
 

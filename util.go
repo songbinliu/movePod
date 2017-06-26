@@ -42,12 +42,10 @@ func listPod(client *kubernetes.Clientset) {
 }
 
 func copyPodInfoX(oldPod, newPod *v1.Pod) {
-	//typeMeta
+	//1. typeMeta
 	newPod.TypeMeta = oldPod.TypeMeta
-	//newPod.Kind = oldPod.Kind
-	//newPod.APIVersion = oldPod.APIVersion
 
-	//objectMeta
+	//2. objectMeta
 	newPod.ObjectMeta = oldPod.ObjectMeta
 	newPod.SelfLink = ""
 	newPod.ResourceVersion = ""
@@ -56,49 +54,22 @@ func copyPodInfoX(oldPod, newPod *v1.Pod) {
 	newPod.DeletionTimestamp = nil
 	newPod.DeletionGracePeriodSeconds = nil
 
-	//newPod.Name = oldPod.Name
-	//newPod.Namespace = oldPod.Namespace
-	//newPod.Labels = oldPod.Labels
-	//newPod.GenerateName = oldPod.GenerateName
-	//newPod.Annotations = oldPod.Annotations
-	//newPod.OwnerReferences = oldPod.OwnerReferences
-	//newPod.Finalizers = oldPod.Finalizers
-	//newPod.ClusterName = oldPod.ClusterName
-	//newPod.UID = oldPod.UID
-
-	//podSpec
+	//3. podSpec
 	spec := oldPod.Spec
 	spec.Hostname = ""
 	spec.Subdomain = ""
 	spec.NodeName = ""
-	//spec := v1.PodSpec{
-	//	Volumes:                       oldPod.Spec.Volumes,
-	//	InitContainers:                oldPod.Spec.Containers,
-	//	RestartPolicy:                 oldPod.Spec.RestartPolicy,
-	//	TerminationGracePeriodSeconds: oldPod.Spec.TerminationGracePeriodSeconds,
-	//	ActiveDeadlineSeconds:         oldPod.Spec.ActiveDeadlineSeconds,
-	//	DNSPolicy:                     oldPod.Spec.DNSPolity,
-	//	NodeSelector:                  oldPod.Spec.NodeSelector,
-	//	ServiceAccountName:            oldPod.Spec.ServiceAccountName,
-	//}
 
 	newPod.Spec = spec
 	return
 }
 
 func copyPodInfo(oldPod, newPod *v1.Pod) {
-	//typeMeta
+	//1. typeMeta
 	newPod.Kind = oldPod.Kind
 	newPod.APIVersion = oldPod.APIVersion
 
-	////objectMeta
-	//newPod.SelfLink = ""
-	//newPod.ResourceVersion = ""
-	//newPod.Generation = 0
-	//newPod.CreationTimestamp = metav1.Time{}
-	//newPod.DeletionTimestamp = nil
-	//newPod.DeletionGracePeriodSeconds = nil
-
+	//2. objectMeta
 	newPod.Name = oldPod.Name
 	newPod.Namespace = oldPod.Namespace
 	newPod.Labels = oldPod.Labels
@@ -109,21 +80,11 @@ func copyPodInfo(oldPod, newPod *v1.Pod) {
 	newPod.ClusterName = oldPod.ClusterName
 	newPod.UID = oldPod.UID
 
-	//podSpec
+	//3. podSpec
 	spec := oldPod.Spec
 	spec.Hostname = ""
 	spec.Subdomain = ""
 	spec.NodeName = ""
-	//spec := v1.PodSpec{
-	//	Volumes:                       oldPod.Spec.Volumes,
-	//	InitContainers:                oldPod.Spec.Containers,
-	//	RestartPolicy:                 oldPod.Spec.RestartPolicy,
-	//	TerminationGracePeriodSeconds: oldPod.Spec.TerminationGracePeriodSeconds,
-	//	ActiveDeadlineSeconds:         oldPod.Spec.ActiveDeadlineSeconds,
-	//	DNSPolicy:                     oldPod.Spec.DNSPolity,
-	//	NodeSelector:                  oldPod.Spec.NodeSelector,
-	//	ServiceAccountName:            oldPod.Spec.ServiceAccountName,
-	//}
 
 	newPod.Spec = spec
 	return
@@ -298,6 +259,9 @@ func updateRCscheduler(client *kubernetes.Clientset, nameSpace, rcName, schedule
 	}
 
 	if rc.Spec.Template.Spec.SchedulerName != schedulerName {
+		err = fmt.Errorf("failed to update schedulerName for ReplicaController-%v: %v", id, err.Error())
+		glog.Error(err.Error())
+		return "", err
 	}
 
 	glog.V(2).Infof("Successfully update ReplicationController:%v scheduler name from [%v] to [%v]",
