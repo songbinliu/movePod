@@ -8,7 +8,6 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/pkg/api/v1"
 )
 
 //global variables
@@ -17,10 +16,7 @@ var (
 	kubeConfig *string
 	nameSpace  *string
 	podName    *string
-	rcName     *string
-	//schedulerName *string
 	noexistSchedulerName *string
-	uuid                 *string
 	nodeName             *string
 )
 
@@ -64,9 +60,13 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 		id, pod.Spec.NodeName, nodeName)
 
 	//2. invalidate the schedulerName of parent controller
-	var f func(*kubernetes.Clientset, string, string, string) (string, error)
 
 	parentKind, parentName, err := getParentInfo(pod)
+	if err != nil {
+		return fmt.Errorf("move-abort: cannot get pod-%v parent info: %v", id, err.Error())
+	}
+
+	var f func(*kubernetes.Clientset, string, string, string) (string, error)
 	switch parentKind {
 	case "":
 		glog.V(3).Infof("pod-%v is a standalone Pod, move it directly.", id)
@@ -89,11 +89,10 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 		glog.Error(err.Error())
 		return err
 	}
-
 	defer f(client, nameSpace, parentName, preScheduler)
 
 	//3. movePod
-	err = movePod(client, nameSpace, podName, nodeName)
+	err = movePod(client, pod, nodeName)
 	if err != nil {
 		return err
 	}
@@ -101,34 +100,6 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 	return nil
 }
 
-func checkPodMoveHealth(client *kubernetes.Clientset, nameSpace, podName, nodeName string) error {
-	podClient := client.CoreV1().Pods(nameSpace)
-
-	id := fmt.Sprintf("%v/%v", nameSpace, podName)
-
-	getOption := metav1.GetOptions{}
-	pod, err := podClient.Get(podName, getOption)
-	if err != nil {
-		err = fmt.Errorf("failed ot get Pod-%v: %v", id, err.Error())
-		glog.Error(err.Error())
-		return err
-	}
-
-	if pod.Status.Phase != v1.PodRunning {
-		err = fmt.Errorf("pod-%v is not running: %v", id, pod.Status.Phase)
-		glog.Error(err.Error())
-		return err
-	}
-
-	if pod.Spec.NodeName != nodeName {
-		err = fmt.Errorf("pod-%v is running on another Node (%v Vs. %v)",
-			id, pod.Spec.NodeName, nodeName)
-		glog.Error(err.Error())
-		return err
-	}
-
-	return nil
-}
 
 func main() {
 	setFlags()

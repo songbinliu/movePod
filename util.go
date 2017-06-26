@@ -122,8 +122,7 @@ func getParentInfo(pod *v1.Pod) (string, string, error){
 
 	glog.V(3).Infof("cannot find pod-%v/%v parent by Annotations.", pod.Namespace, pod.Name)
 
-
-	return "", "", fmt.Errorf("cannot get parents info for pod:%v/%v", pod.Namespace, pod.Name)
+	return "", "", nil
 }
 
 func getKubeClient(masterUrl, kubeConfig *string) *kubernetes.Clientset {
@@ -273,52 +272,31 @@ func updateRCscheduler(client *kubernetes.Clientset, nameSpace, rcName, schedule
 }
 
 // move pod nameSpace/podName to node nodeName
-func movePod(client *kubernetes.Clientset, namespace, podName, nodeName string) error {
-	if namespace == "" || podName == "" || nodeName == "" {
-		err := fmt.Errorf("should not be emtpy: ns=[%v], podName=[%v], nodeName=[%v]",
-			namespace, podName, nodeName)
-		glog.Error(err.Error())
-		return err
-	}
+func movePod(client *kubernetes.Clientset, pod *v1.Pod, nodeName string) error {
 
-	podClient := client.CoreV1().Pods(namespace)
+	podClient := client.CoreV1().Pods(pod.Namespace)
 	if podClient == nil {
-		err := fmt.Errorf("cannot get Pod client for nameSpace:%v", namespace)
+		err := fmt.Errorf("cannot get Pod client for nameSpace:%v", pod.Namespace)
 		glog.Errorf(err.Error())
 		return err
 	}
 
-	//1. get original pod
-	getOption := metav1.GetOptions{}
-	pod, err := podClient.Get(podName, getOption)
-	if err != nil {
-		err = fmt.Errorf("move-failed: get original pod:%v/%v\n%v",
-			namespace, podName, err.Error())
-		glog.Error(err.Error())
-		return err
-	}
+	//1. copy the original pod
+	id := fmt.Sprintf("%v/%v", pod.Namespace, pod.Name)
+	glog.V(2).Infof("move-pod: begin to move %v from %v to %v",
+		id, pod.Spec.NodeName, nodeName)
 
-	if pod.Spec.NodeName == nodeName {
-		err = fmt.Errorf("move-abort: pod %v/%v is already on node: %v",
-			namespace, podName, nodeName)
-		glog.Error(err.Error())
-		return err
-	}
-
-	glog.V(2).Infof("move-pod: begin to move %v/%v from %v to %v",
-		namespace, pod.Name, pod.Spec.NodeName, nodeName)
-
-	//2. copy and kill original pod
 	npod := &v1.Pod{}
 	copyPodInfoX(pod, npod)
 	npod.Spec.NodeName = nodeName
 
+	//2. kill original pod
 	var grace int64 = 0
 	delOption := &metav1.DeleteOptions{GracePeriodSeconds: &grace}
-	err = podClient.Delete(pod.Name, delOption)
+	err := podClient.Delete(pod.Name, delOption)
 	if err != nil {
-		err = fmt.Errorf("move-failed: failed to delete original pod: %v/%v\n%v",
-			namespace, pod.Name, err.Error())
+		err = fmt.Errorf("move-failed: failed to delete original pod-%v: %v",
+			id, err.Error())
 		glog.Error(err.Error())
 		return err
 	}
@@ -327,46 +305,43 @@ func movePod(client *kubernetes.Clientset, namespace, podName, nodeName string) 
 	// time.Sleep(time.Second * 10) // this line is for experiments
 	_, err = podClient.Create(npod)
 	if err != nil {
-		err = fmt.Errorf("move-failed: failed to create new pod: %v/%v\n%v",
-			namespace, npod.Name, err.Error())
+		err = fmt.Errorf("move-failed: failed to create new pod-%v: %v",
+			id, err.Error())
 		glog.Error(err.Error())
 		return err
 	}
 
-	////4. check the new Pod
-	//time.Sleep(time.Second * 3)
-	//if err = checkPodLive(client, namespace, npod.Name); err != nil {
-	//	err = fmt.Errorf("move-failed: check failed:%v\n", err.Error())
-	//	glog.Error(err.Error())
-	//	return err
-	//}
-
-	glog.V(2).Infof("move-finished: %v/%v from %v to %v",
-		namespace, pod.Name, pod.Spec.NodeName, nodeName)
+	glog.V(2).Infof("move-finished: %v from %v to %v",
+		id, pod.Spec.NodeName, nodeName)
 
 	return nil
 }
 
-func checkPodLive(client *kubernetes.Clientset, namespace, name string) error {
-	podClient := client.CoreV1().Pods(namespace)
-	xpod, err := podClient.Get(name, metav1.GetOptions{})
+func checkPodMoveHealth(client *kubernetes.Clientset, nameSpace, podName, nodeName string) error {
+	podClient := client.CoreV1().Pods(nameSpace)
+
+	id := fmt.Sprintf("%v/%v", nameSpace, podName)
+
+	getOption := metav1.GetOptions{}
+	pod, err := podClient.Get(podName, getOption)
 	if err != nil {
-		err = fmt.Errorf("fail to get Pod: %v/%v\n%v\n",
-			namespace, name, err.Error())
-		glog.Errorf(err.Error())
+		err = fmt.Errorf("failed ot get Pod-%v: %v", id, err.Error())
+		glog.Error(err.Error())
 		return err
 	}
 
-	goodStatus := map[v1.PodPhase]bool{
-		v1.PodRunning: true,
-		v1.PodPending: true,
+	if pod.Status.Phase != v1.PodRunning {
+		err = fmt.Errorf("pod-%v is not running: %v", id, pod.Status.Phase)
+		glog.Error(err.Error())
+		return err
 	}
 
-	ok := goodStatus[xpod.Status.Phase]
-	if ok {
-		return nil
+	if pod.Spec.NodeName != nodeName {
+		err = fmt.Errorf("pod-%v is running on another Node (%v Vs. %v)",
+			id, pod.Spec.NodeName, nodeName)
+		glog.Error(err.Error())
+		return err
 	}
 
-	err = fmt.Errorf("pod.status=%v\n", xpod.Status.Phase)
-	return err
+	return nil
 }
