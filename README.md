@@ -1,5 +1,5 @@
 # movePod #
-This project demonstrates a method that can move pods, which either are created by ReplicationController, or by ReplicaSet(which is created by Deployment).
+This project demonstrates a method that can move pods, which either are created by ReplicationController, or by ReplicaSet(which may be created by Deployment).
 
 # Method #
 **1.** set the schedulerName of the parent object (ReplicationController, or ReplicaSet) of the pod to a **invalidate scheduler**; 
@@ -15,7 +15,13 @@ It should be noted that, if the pod has no parent object, then only the second s
 
 It is difficult to move a Pod controlled by ReplicationController/ReplicaSet, because in the second step of the [**Copy-Delete-Create**] move operation, the ReplicationController/ReplicaSet will create a new Pod immediately to make sure there is enough number of Running replicas. However, ReplicationController/ReplicaSet also amkes sure that there is no more than desired number of Running replicas. So the pod created by our move operation have to compete with the pod created by ReplicationController/ReplicaSet: [the first to get to **running** state will survive (see experiment)](https://gist.github.com/songbinliu/7576bd84bab50f4e399d979d7998cdf6#an-experiment).
 
-There are some comunication rounds between  *Kubernetes ControllerManger* and *Kubernetes APIServer* (*Kubernetes scheduler* is also involved), than the comunication between *kubeturbo* and *Kubernetes APIServer*.  
+If we can make sure that the pod created by ReplicationController/ReplicaSet is scheduled **later than** the pod 
+created by our move operation, then our pod will almost alway be quicker to get to **running** state. We achive this by assigning an none-exist scheduler name to the ReplictionController/ReplicaSet before the **Delete** step: which makes sure 
+the pod created by ReplicationController/ReplicaSet won't be scheduled. And because our pod don't need to be scheduled, and bind to the new node directly. So our pod will get to the **running** state first. (But if the new node is too slow to run the pod, or failed to run the pod, then our pod will be deleted.)
+
+In the end of the move operation, we restore the scheduler name of the ReplicationController/ReplicaSet.
+
+
 
 
 
