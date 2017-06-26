@@ -32,3 +32,5 @@ go build
 ```
 
 
+# Other info #
+Some [experiments](https://gist.github.com/songbinliu/6b28a15ac718a070ab66cff44f0cc056) about Kubernetes 1.6 [advanced scheduling feature](http://blog.kubernetes.io/2017/03/advanced-scheduling-in-kubernetes.html).
