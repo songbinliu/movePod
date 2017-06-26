@@ -91,7 +91,6 @@ func copyPodInfo(oldPod, newPod *v1.Pod) {
 }
 
 func getParentInfo(pod *v1.Pod) (string, string, error){
-
 	//1. check ownerReferences:
 	if pod.OwnerReferences != nil && len(pod.OwnerReferences) > 0 {
 		for _, owner := range pod.OwnerReferences {
@@ -126,7 +125,6 @@ func getParentInfo(pod *v1.Pod) (string, string, error){
 }
 
 func getKubeClient(masterUrl, kubeConfig *string) *kubernetes.Clientset {
-
 	if *masterUrl == "" && *kubeConfig == "" {
 		fmt.Println("must specify masterUrl or kubeConfig.")
 		return nil
@@ -273,7 +271,6 @@ func updateRCscheduler(client *kubernetes.Clientset, nameSpace, rcName, schedule
 
 // move pod nameSpace/podName to node nodeName
 func movePod(client *kubernetes.Clientset, pod *v1.Pod, nodeName string) error {
-
 	podClient := client.CoreV1().Pods(pod.Namespace)
 	if podClient == nil {
 		err := fmt.Errorf("cannot get Pod client for nameSpace:%v", pod.Namespace)
