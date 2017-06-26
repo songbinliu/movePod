@@ -65,29 +65,40 @@ func copyPodInfoX(oldPod, newPod *v1.Pod) {
 }
 
 func copyPodInfo(oldPod, newPod *v1.Pod) {
-	//1. typeMeta
+	//1. typeMeta -- full copy
 	newPod.Kind = oldPod.Kind
 	newPod.APIVersion = oldPod.APIVersion
 
-	//2. objectMeta
+	//2. objectMeta -- partial copy
 	newPod.Name = oldPod.Name
-	newPod.Namespace = oldPod.Namespace
-	newPod.Labels = oldPod.Labels
 	newPod.GenerateName = oldPod.GenerateName
+	newPod.Namespace = oldPod.Namespace
+	//newPod.SelfLink = oldPod.SelfLink
+	newPod.UID = oldPod.UID
+	//newPod.ResourceVersion = oldPod.ResourceVersion
+	//newPod.Generation = oldPod.Generation
+	//newPod.CreationTimestamp = oldPod.CreationTimestamp
+
+	//NOTE: Deletion timestamp and gracePeriod will be set by system when to delete it.
+	//newPod.DeletionTimestamp = oldPod.DeletionTimestamp
+	//newPod.DeletionGracePeriodSeconds = oldPod.DeletionGracePeriodSeconds
+
+	newPod.Labels = oldPod.Labels
 	newPod.Annotations = oldPod.Annotations
 	newPod.OwnerReferences = oldPod.OwnerReferences
+	newPod.Initializers = oldPod.Initializers
 	newPod.Finalizers = oldPod.Finalizers
 	newPod.ClusterName = oldPod.ClusterName
-	newPod.UID = oldPod.UID
 
-	//3. podSpec
+	//3. podSpec -- full copy with modifications
 	spec := oldPod.Spec
 	spec.Hostname = ""
 	spec.Subdomain = ""
 	spec.NodeName = ""
 
 	newPod.Spec = spec
-	return
+
+	//4. status: won't copy status
 }
 
 func getParentInfo(pod *v1.Pod) (string, string, error){
