@@ -1,17 +1,22 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	//"time"
-	"encoding/json"
 
 	"github.com/golang/glog"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
+	client "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+)
+
+const (
+	// Set the grace period to 0 for deleting the pod immediately.
+	DefaultPodGracePeriod int64 = 0
 )
 
 func printPods(pods *v1.PodList) {
@@ -30,7 +35,7 @@ func printPods(pods *v1.PodList) {
 	}
 }
 
-func listPod(client *kubernetes.Clientset) {
+func listPod(client *client.Clientset) {
 	pods, err := client.CoreV1().Pods(v1.NamespaceAll).List(metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
@@ -101,7 +106,7 @@ func copyPodInfo(oldPod, newPod *v1.Pod) {
 	//4. status: won't copy status
 }
 
-func getParentInfo(pod *v1.Pod) (string, string, error){
+func getParentInfo(pod *v1.Pod) (string, string, error) {
 	//1. check ownerReferences:
 	if pod.OwnerReferences != nil && len(pod.OwnerReferences) > 0 {
 		for _, owner := range pod.OwnerReferences {
@@ -120,8 +125,8 @@ func getParentInfo(pod *v1.Pod) (string, string, error){
 
 			var ref v1.SerializedReference
 
-			jsonstr := []byte(value)
-			if err := json.Unmarshal(jsonstr, ref); err != nil {
+			//jsonstr := []byte(value)
+			if err := json.Unmarshal([]byte(value), ref); err != nil {
 				err = fmt.Errorf("failed to decode parent annoation:%v", err.Error())
 				return "", "", err
 			}
@@ -135,7 +140,7 @@ func getParentInfo(pod *v1.Pod) (string, string, error){
 	return "", "", nil
 }
 
-func getKubeClient(masterUrl, kubeConfig *string) *kubernetes.Clientset {
+func getKubeClient(masterUrl, kubeConfig *string) *client.Clientset {
 	if *masterUrl == "" && *kubeConfig == "" {
 		fmt.Println("must specify masterUrl or kubeConfig.")
 		return nil
@@ -154,7 +159,7 @@ func getKubeClient(masterUrl, kubeConfig *string) *kubernetes.Clientset {
 		panic(err.Error())
 	}
 	// creates the clientset
-	clientset, err := kubernetes.NewForConfig(config)
+	clientset, err := client.NewForConfig(config)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -162,10 +167,11 @@ func getKubeClient(masterUrl, kubeConfig *string) *kubernetes.Clientset {
 	return clientset
 }
 
-//update the schedulerName of a ReplicaSet
+//update the schedulerName of a ReplicaSet to <schedulerName>
+// Note: if condName is not empty, then only current schedulerName is same to condName, then will do the update.
 // return the previous schedulerName
-func updateRSscheduler(client *kubernetes.Clientset, nameSpace, rsName, schedulerName string) (string, error) {
-	preSchedulerName := ""
+func updateRSscheduler(client *client.Clientset, nameSpace, rsName, condName, schedulerName string) (string, error) {
+	currentName := ""
 	if schedulerName == "" {
 		return "", fmt.Errorf("update failed: schedulerName is empty")
 	}
@@ -183,29 +189,35 @@ func updateRSscheduler(client *kubernetes.Clientset, nameSpace, rsName, schedule
 	if err != nil {
 		err = fmt.Errorf("failed to get ReplicaSet-%v: %v", id, err.Error())
 		glog.Error(err.Error())
-		return preSchedulerName, err
+		return currentName, err
 	}
 
-	preSchedulerName = rs.Spec.Template.Spec.SchedulerName
-	glog.V(3).Infof("ReplicationController-%v:%v, replicaNum:%v\n",
-		id,
-		rs.Spec.Template.Spec.SchedulerName,
-		*rs.Spec.Replicas)
+	//2. check whether to do the update
+	currentName = rs.Spec.Template.Spec.SchedulerName
+	if currentName == schedulerName {
+		glog.V(3).Infof("No need to update: schedulerName is already is [%v]-[%v]", id, schedulerName)
+		return "", nil
+	}
+	if condName != "" && currentName != condName {
+		err := fmt.Errorf("abort to update schedulerName; [%v] - [%v] Vs. [%v]", id, condName, currentName)
+		glog.Warning(err.Error())
+		return "", err
+	}
 
-	//2. update schedulerName
+	//3. update schedulerName
 	rs.Spec.Template.Spec.SchedulerName = schedulerName
 	_, err = rsClient.Update(rs)
 	if err != nil {
 		err = fmt.Errorf("failed to update RC-%v:%v\n", id, err.Error())
 		glog.Error(err.Error())
-		return preSchedulerName, err
+		return currentName, err
 	}
 
-	//3. check it
+	//4. check final status
 	rs, err = rsClient.Get(rsName, option)
 	if err != nil {
 		err = fmt.Errorf("failed to check ReplicaSet-%v: %v", id, err.Error())
-		return preSchedulerName, err
+		return currentName, err
 	}
 
 	if rs.Spec.Template.Spec.SchedulerName != schedulerName {
@@ -214,23 +226,22 @@ func updateRSscheduler(client *kubernetes.Clientset, nameSpace, rsName, schedule
 		return "", err
 	}
 
-	glog.V(2).Infof("Successfully update ReplicationController:%v scheduler name from [%v] to [%v]",
-		id,
-		preSchedulerName,
+	glog.V(2).Infof("Successfully update ReplicationController:%v scheduler name [%v] -> [%v]", id, currentName,
 		schedulerName)
 
-	return preSchedulerName, nil
+	return currentName, nil
 }
 
 //update the schedulerName of a ReplicationController
+// if condName is not empty, then only current schedulerName is same to condName, then will do the update.
 // return the previous schedulerName
-func updateRCscheduler(client *kubernetes.Clientset, nameSpace, rcName, schedulerName string) (string, error) {
-	preSchedulerName := ""
+func updateRCscheduler(client *client.Clientset, nameSpace, rcName, condName, schedulerName string) (string, error) {
+	currentName := ""
 	if schedulerName == "" {
 		return "", fmt.Errorf("update failed: schedulerName is empty")
 	}
 
-	id := fmt.Sprintf("%v/%v", nameSpace,rcName)
+	id := fmt.Sprintf("%v/%v", nameSpace, rcName)
 	rcClient := client.CoreV1().ReplicationControllers(nameSpace)
 
 	//1. get
@@ -239,31 +250,36 @@ func updateRCscheduler(client *kubernetes.Clientset, nameSpace, rcName, schedule
 	if err != nil {
 		err = fmt.Errorf("failed to get ReplicationController-%v: %v\n", id, err.Error())
 		glog.Error(err.Error())
-		return preSchedulerName, err
+		return currentName, err
 	}
 
-	preSchedulerName = rc.Spec.Template.Spec.SchedulerName
+	//2. check whether to update
+	currentName = rc.Spec.Template.Spec.SchedulerName
+	if currentName == schedulerName {
+		glog.V(3).Infof("No need to update: schedulerName is already is [%v]-[%v]", id, schedulerName)
+		return "", nil
+	}
+	if condName != "" && currentName != condName {
+		err := fmt.Errorf("abort to update schedulerName; [%v] - [%v] Vs. [%v]", id, condName, currentName)
+		glog.Warning(err.Error())
+		return "", err
+	}
 
-	glog.V(3).Infof("ReplicationController-%v:%v, replicaNum:%v\n",
-		id,
-		rc.Spec.Template.Spec.SchedulerName,
-		*rc.Spec.Replicas)
-
-	//2. update
+	//3. update
 	rc.Spec.Template.Spec.SchedulerName = schedulerName
 	rc, err = rcClient.Update(rc)
 	if err != nil {
 		err = fmt.Errorf("failed to update RC-%v:%v\n", id, err.Error())
 		glog.Error(err.Error())
-		return preSchedulerName, err
+		return currentName, err
 	}
 
-	//3. check it
+	//4. check final status
 	rc, err = rcClient.Get(rcName, option)
 	if err != nil {
 		err = fmt.Errorf("failed to get ReplicationController-%v: %v\n", id, err.Error())
 		glog.Error(err.Error())
-		return preSchedulerName, err
+		return currentName, err
 	}
 
 	if rc.Spec.Template.Spec.SchedulerName != schedulerName {
@@ -272,16 +288,14 @@ func updateRCscheduler(client *kubernetes.Clientset, nameSpace, rcName, schedule
 		return "", err
 	}
 
-	glog.V(2).Infof("Successfully update ReplicationController:%v scheduler name from [%v] to [%v]",
-		id,
-		preSchedulerName,
+	glog.V(2).Infof("Successfully update ReplicationController:%v scheduler name from [%v] to [%v]", id, currentName,
 		schedulerName)
 
-	return preSchedulerName, nil
+	return currentName, nil
 }
 
 // move pod nameSpace/podName to node nodeName
-func movePod(client *kubernetes.Clientset, pod *v1.Pod, nodeName string) error {
+func movePod(client *client.Clientset, pod *v1.Pod, nodeName string) error {
 	podClient := client.CoreV1().Pods(pod.Namespace)
 	if podClient == nil {
 		err := fmt.Errorf("cannot get Pod client for nameSpace:%v", pod.Namespace)
@@ -310,7 +324,8 @@ func movePod(client *kubernetes.Clientset, pod *v1.Pod, nodeName string) error {
 	}
 
 	//3. create (and bind) the new Pod
-	// time.Sleep(time.Second * 10) // this line is for experiments
+	//glog.V(2).Infof("sleep 10 seconds to test the behaivor of quicker ReplicationController")
+	//time.Sleep(time.Second * 10) // this line is for experiments
 	_, err = podClient.Create(npod)
 	if err != nil {
 		err = fmt.Errorf("move-failed: failed to create new pod-%v: %v",
@@ -325,7 +340,7 @@ func movePod(client *kubernetes.Clientset, pod *v1.Pod, nodeName string) error {
 	return nil
 }
 
-func checkPodMoveHealth(client *kubernetes.Clientset, nameSpace, podName, nodeName string) error {
+func checkPodMoveHealth(client *client.Clientset, nameSpace, podName, nodeName string) error {
 	podClient := client.CoreV1().Pods(nameSpace)
 
 	id := fmt.Sprintf("%v/%v", nameSpace, podName)

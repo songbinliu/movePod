@@ -12,10 +12,10 @@ import (
 
 //global variables
 var (
-	masterUrl  *string
-	kubeConfig *string
-	nameSpace  *string
-	podName    *string
+	masterUrl            *string
+	kubeConfig           *string
+	nameSpace            *string
+	podName              *string
 	noexistSchedulerName *string
 	nodeName             *string
 )
@@ -23,6 +23,8 @@ var (
 const (
 	// a non-exist scheduler: make sure the pods won't be scheduled by default-scheduler during our moving
 	DefaultNoneExistSchedulerName = "turbo-none-exist-scheduler"
+	KindReplicationController     = "ReplicationController"
+	KindReplicaSet                = "ReplicaSet"
 )
 
 func setFlags() {
@@ -66,15 +68,15 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 		return fmt.Errorf("move-abort: cannot get pod-%v parent info: %v", id, err.Error())
 	}
 
-	var f func(*kubernetes.Clientset, string, string, string) (string, error)
+	var f func(*kubernetes.Clientset, string, string, string, string) (string, error)
 	switch parentKind {
 	case "":
 		glog.V(3).Infof("pod-%v is a standalone Pod, move it directly.", id)
-		f = func(c *kubernetes.Clientset, ns, pname, sname string) (string, error) { return "", nil }
-	case "ReplicationController":
+		f = func(c *kubernetes.Clientset, ns, pname, cname, sname string) (string, error) { return "", nil }
+	case KindReplicationController:
 		glog.V(3).Infof("pod-%v parent is a ReplicationController-%v", id, parentName)
 		f = updateRCscheduler
-	case "ReplicaSet":
+	case KindReplicaSet:
 		glog.V(2).Infof("pod-%v parent is a ReplicaSet-%v", id, parentName)
 		f = updateRSscheduler
 	default:
@@ -83,13 +85,13 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 		return err
 	}
 
-	preScheduler, err := f(client, nameSpace, parentName, *noexistSchedulerName)
+	preScheduler, err := f(client, nameSpace, parentName, "", *noexistSchedulerName)
 	if err != nil {
 		err = fmt.Errorf("move-failed: update pod-%v parent-%v scheduler failed:%v", id, parentName, err.Error())
 		glog.Error(err.Error())
 		return err
 	}
-	defer f(client, nameSpace, parentName, preScheduler)
+	defer f(client, nameSpace, parentName, *noexistSchedulerName, preScheduler)
 
 	//3. movePod
 	err = movePod(client, pod, nodeName)
@@ -99,7 +101,6 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 
 	return nil
 }
-
 
 func main() {
 	setFlags()
@@ -121,6 +122,7 @@ func main() {
 		return
 	}
 
+	glog.V(2).Infof("sleep 10 seconds to check the final state")
 	time.Sleep(time.Second * 10)
 	if err := checkPodMoveHealth(kubeClient, *nameSpace, *podName, *nodeName); err != nil {
 		glog.Errorf("move pod failed: %v", err.Error())
