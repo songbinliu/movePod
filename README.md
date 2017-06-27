@@ -4,7 +4,7 @@ This project demonstrates a method that can move pods, which either are created 
 # Method #
 **1.** set the schedulerName of the parent object (ReplicationController, or ReplicaSet) of the pod to a **invalid scheduler**; 
 
-**2.** move the pod by [**Copy-Delete-Create**](https://github.com/songbinliu/movePod/blob/master/util.go#L273) steps, and uses the **Binding-on-Creation** way by assigning [pod.Spec.NodeName](https://github.com/kubernetes/client-go/blob/master/pkg/api/v1/types.go#L2470)
+**2.** move the pod by [**Copy-Delete-Create**](https://github.com/songbinliu/movePod/blob/master/util.go#L284) steps, and uses the **Binding-on-Creation** way by assigning [pod.Spec.NodeName](https://github.com/kubernetes/client-go/blob/master/pkg/api/v1/types.go#L2470)
 when to create the new the Pod. 
 
 **3.** restore the schedulerName of the parent object.
@@ -19,7 +19,7 @@ If we can make sure that the pod created by ReplicationController/ReplicaSet is 
 created by our move operation, then our pod will almost alway be quicker to get to **running** state. We achive this by assigning an none-exist scheduler name to the ReplictionController/ReplicaSet before the **Delete** step: which makes sure 
 the pod created by ReplicationController/ReplicaSet won't be scheduled. And because our pod don't need to be scheduled, and bind to the new node directly. So our pod will get to the **running** state first. (But if the new node is too slow to run the pod, or failed to run the pod, then our pod will be deleted.)
 
-In the end of the move operation, we restore the scheduler name of the ReplicationController/ReplicaSet.
+In the end of the move operation, we restore the scheduler name of the ReplicationController/ReplicaSet, to clear everything.
 
 
 # Test it #
