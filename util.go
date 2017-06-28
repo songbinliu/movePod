@@ -243,8 +243,6 @@ func updateRCscheduler(client *client.Clientset, nameSpace, rcName, condName, sc
 	id := fmt.Sprintf("%v/%v", nameSpace, rcName)
 	rcClient := client.CoreV1().ReplicationControllers(nameSpace)
 
-	glog.V(2).Info("here")
-
 	//1. get
 	option := metav1.GetOptions{}
 	rc, err := rcClient.Get(rcName, option)
