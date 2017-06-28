@@ -62,7 +62,6 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 		id, pod.Spec.NodeName, nodeName)
 
 	//2. invalidate the schedulerName of parent controller
-
 	parentKind, parentName, err := getParentInfo(pod)
 	if err != nil {
 		return fmt.Errorf("move-abort: cannot get pod-%v parent info: %v", id, err.Error())
@@ -86,12 +85,12 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 	}
 
 	preScheduler, err := f(client, nameSpace, parentName, "", *noexistSchedulerName)
+	defer f(client, nameSpace, parentName, *noexistSchedulerName, preScheduler)
 	if err != nil {
 		err = fmt.Errorf("move-failed: update pod-%v parent-%v scheduler failed:%v", id, parentName, err.Error())
 		glog.Error(err.Error())
 		return err
 	}
-	defer f(client, nameSpace, parentName, *noexistSchedulerName, preScheduler)
 
 	//3. movePod
 	err = movePod(client, pod, nodeName)

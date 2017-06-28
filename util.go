@@ -122,12 +122,11 @@ func getParentInfo(pod *v1.Pod) (string, string, error) {
 	if pod.Annotations != nil && len(pod.Annotations) > 0 {
 		key := "kubernetes.io/created-by"
 		if value, ok := pod.Annotations[key]; ok {
-
 			var ref v1.SerializedReference
 
-			//jsonstr := []byte(value)
-			if err := json.Unmarshal([]byte(value), ref); err != nil {
-				err = fmt.Errorf("failed to decode parent annoation:%v", err.Error())
+			if err := json.Unmarshal([]byte(value), &ref); err != nil {
+				err = fmt.Errorf("failed to decode parent annoation:%v\n[%v]", err.Error(), value)
+				glog.Error(err.Error())
 				return "", "", err
 			}
 
@@ -243,6 +242,8 @@ func updateRCscheduler(client *client.Clientset, nameSpace, rcName, condName, sc
 
 	id := fmt.Sprintf("%v/%v", nameSpace, rcName)
 	rcClient := client.CoreV1().ReplicationControllers(nameSpace)
+
+	glog.V(2).Info("here")
 
 	//1. get
 	option := metav1.GetOptions{}
