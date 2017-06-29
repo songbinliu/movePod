@@ -166,14 +166,46 @@ func getKubeClient(masterUrl, kubeConfig *string) *client.Clientset {
 	return clientset
 }
 
+func getSchedulerName(client *client.Clientset, kind, nameSpace, name string) (string, error) {
+	rerr := fmt.Errorf("unsupported kind:[%v]", kind)
+
+	option := metav1.GetOptions{}
+	switch kind {
+	case KindReplicationController:
+		if rc, err := client.CoreV1().ReplicationControllers(nameSpace).Get(name, option); err == nil {
+			return rc.Spec.Template.Spec.SchedulerName, nil
+		} else {
+			rerr = err
+		}
+	case KindReplicaSet:
+		if rs, err := client.ExtensionsV1beta1().ReplicaSets(nameSpace).Get(name, option); err == nil {
+			return rs.Spec.Template.Spec.SchedulerName, nil
+		} else {
+			rerr = err
+		}
+	}
+
+	return "", rerr
+}
+
+func checkSchedulerName(client *client.Clientset, kind, nameSpace, name, expectedScheduler string) (bool, error) {
+	currentName, err := getSchedulerName(client, kind, nameSpace, name)
+	if err != nil {
+		return false, err
+	}
+
+	if currentName == expectedScheduler {
+		return true, nil
+	}
+
+	return false, nil
+}
+
 //update the schedulerName of a ReplicaSet to <schedulerName>
 // Note: if condName is not empty, then only current schedulerName is same to condName, then will do the update.
 // return the previous schedulerName
-func updateRSscheduler(client *client.Clientset, nameSpace, rsName, condName, schedulerName string) (string, error) {
+func updateRSscheduler(client *client.Clientset, nameSpace, rsName, schedulerName string) (string, error) {
 	currentName := ""
-	if schedulerName == "" {
-		return "", fmt.Errorf("update failed: schedulerName is empty")
-	}
 
 	rsClient := client.ExtensionsV1beta1().ReplicaSets(nameSpace)
 	if rsClient == nil {
@@ -191,19 +223,7 @@ func updateRSscheduler(client *client.Clientset, nameSpace, rsName, condName, sc
 		return currentName, err
 	}
 
-	//2. check whether to do the update
-	currentName = rs.Spec.Template.Spec.SchedulerName
-	if currentName == schedulerName {
-		glog.V(3).Infof("No need to update: schedulerName is already is [%v]-[%v]", id, schedulerName)
-		return "", nil
-	}
-	if condName != "" && currentName != condName {
-		err := fmt.Errorf("abort to update schedulerName; [%v] - [%v] Vs. [%v]", id, condName, currentName)
-		glog.Warning(err.Error())
-		return "", err
-	}
-
-	//3. update schedulerName
+	//2. update schedulerName
 	rs.Spec.Template.Spec.SchedulerName = schedulerName
 	_, err = rsClient.Update(rs)
 	if err != nil {
@@ -212,33 +232,14 @@ func updateRSscheduler(client *client.Clientset, nameSpace, rsName, condName, sc
 		return currentName, err
 	}
 
-	//4. check final status
-	rs, err = rsClient.Get(rsName, option)
-	if err != nil {
-		err = fmt.Errorf("failed to check ReplicaSet-%v: %v", id, err.Error())
-		return currentName, err
-	}
-
-	if rs.Spec.Template.Spec.SchedulerName != schedulerName {
-		err = fmt.Errorf("failed to update schedulerName for ReplicaSet-%v: %v", id, err.Error())
-		glog.Error(err.Error())
-		return "", err
-	}
-
-	glog.V(2).Infof("Successfully update ReplicationController:%v scheduler name [%v] -> [%v]", id, currentName,
-		schedulerName)
-
 	return currentName, nil
 }
 
 //update the schedulerName of a ReplicationController
 // if condName is not empty, then only current schedulerName is same to condName, then will do the update.
-// return the previous schedulerName
-func updateRCscheduler(client *client.Clientset, nameSpace, rcName, condName, schedulerName string) (string, error) {
+// return the previous schedulerName; or return "" if update failed.
+func updateRCscheduler(client *client.Clientset, nameSpace, rcName, schedulerName string) (string, error) {
 	currentName := ""
-	if schedulerName == "" {
-		return "", fmt.Errorf("update failed: schedulerName is empty")
-	}
 
 	id := fmt.Sprintf("%v/%v", nameSpace, rcName)
 	rcClient := client.CoreV1().ReplicationControllers(nameSpace)
@@ -252,19 +253,7 @@ func updateRCscheduler(client *client.Clientset, nameSpace, rcName, condName, sc
 		return currentName, err
 	}
 
-	//2. check whether to update
-	currentName = rc.Spec.Template.Spec.SchedulerName
-	if currentName == schedulerName {
-		glog.V(3).Infof("No need to update: schedulerName is already is [%v]-[%v]", id, schedulerName)
-		return "", nil
-	}
-	if condName != "" && currentName != condName {
-		err := fmt.Errorf("abort to update schedulerName; [%v] - [%v] Vs. [%v]", id, condName, currentName)
-		glog.Warning(err.Error())
-		return "", err
-	}
-
-	//3. update
+	//2. update
 	rc.Spec.Template.Spec.SchedulerName = schedulerName
 	rc, err = rcClient.Update(rc)
 	if err != nil {
@@ -272,23 +261,6 @@ func updateRCscheduler(client *client.Clientset, nameSpace, rcName, condName, sc
 		glog.Error(err.Error())
 		return currentName, err
 	}
-
-	//4. check final status
-	rc, err = rcClient.Get(rcName, option)
-	if err != nil {
-		err = fmt.Errorf("failed to get ReplicationController-%v: %v\n", id, err.Error())
-		glog.Error(err.Error())
-		return currentName, err
-	}
-
-	if rc.Spec.Template.Spec.SchedulerName != schedulerName {
-		err = fmt.Errorf("failed to update schedulerName for ReplicaController-%v: %v", id, err.Error())
-		glog.Error(err.Error())
-		return "", err
-	}
-
-	glog.V(2).Infof("Successfully update ReplicationController:%v scheduler name from [%v] to [%v]", id, currentName,
-		schedulerName)
 
 	return currentName, nil
 }

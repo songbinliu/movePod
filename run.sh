@@ -1,7 +1,8 @@
 #!/bin/bash
 set -x
 
-k8sconf="configs/aws.kubeconfig.yaml"
+#k8sconf="configs/aws.kubeconfig.yaml"
+k8sconf="configs/en119.kubeconfig.yaml"
 
 nameSpace="default"
 podName=nginx-deployment-4234284026-n08h1

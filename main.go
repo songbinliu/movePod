@@ -8,6 +8,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/pkg/api/v1"
 )
 
 //global variables
@@ -18,6 +19,7 @@ var (
 	podName              *string
 	noexistSchedulerName *string
 	nodeName             *string
+	k8sVersion           *string
 )
 
 const (
@@ -34,9 +36,64 @@ func setFlags() {
 	podName = flag.String("podName", "myschedule-cpu-80", "the podName to be handled")
 	noexistSchedulerName = flag.String("scheduler-name", DefaultNoneExistSchedulerName, "the name of the none-exist-scheduler")
 	nodeName = flag.String("nodeName", "", "Destination of move")
+	k8sVersion = flag.String("k8sVersion", "1.6", "the version of Kubenetes cluster, candidates are 1.5 | 1.6")
 
 	flag.Set("alsologtostderr", "true")
 	flag.Parse()
+}
+
+func addErrors(prefix string, err1, err2 error) error {
+	rerr := fmt.Errorf("%v ", prefix)
+	if err1 != nil {
+		rerr = fmt.Errorf("%v %v", rerr.Error(), err1.Error())
+	}
+
+	if err2 != nil {
+		rerr = fmt.Errorf("%v %v", rerr.Error(), err2.Error())
+	}
+
+	glog.Errorf("check update faild:%v", rerr.Error())
+	return rerr
+}
+
+// update the parent's scheduler before moving pod; then restore parent's scheduler
+func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, parentName, nodeName string) error {
+	id := fmt.Sprintf("%v/%v", pod.Namespace, pod.Name)
+	//2. update the schedulerName
+	var update func(*kubernetes.Clientset, string, string, string) (string, error)
+	switch parentKind {
+	case KindReplicationController:
+		glog.V(3).Infof("pod-%v parent is a ReplicationController-%v", id, parentName)
+		update = updateRCscheduler
+	case KindReplicaSet:
+		glog.V(2).Infof("pod-%v parent is a ReplicaSet-%v", id, parentName)
+		update = updateRSscheduler
+	default:
+		err := fmt.Errorf("unsupported parent-[%v] Kind-[%v]", parentName, parentKind)
+		glog.Warning(err.Error())
+		return err
+	}
+
+	noexist := *noexistSchedulerName
+	check := checkSchedulerName
+	nameSpace := pod.Namespace
+
+	preScheduler, err := update(client, nameSpace, parentName, noexist)
+	if flag, err2 := check(client, parentKind, nameSpace, parentName, noexist); !flag {
+		prefix := fmt.Sprintf("move-failed: pod-[%v], parent-[%v]", id, parentName)
+		return addErrors(prefix, err, err2)
+	}
+
+	restore := func() {
+		//check it again in case somebody has changed it back.
+		if flag, _ := check(client, parentKind, nameSpace, parentName, noexist); flag {
+			update(client, nameSpace, parentName, preScheduler)
+		}
+	}
+	defer restore()
+
+	//3. movePod
+	return  movePod(client, pod, nodeName)
 }
 
 func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) error {
@@ -67,35 +124,16 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 		return fmt.Errorf("move-abort: cannot get pod-%v parent info: %v", id, err.Error())
 	}
 
-	var f func(*kubernetes.Clientset, string, string, string, string) (string, error)
-	switch parentKind {
-	case "":
-		glog.V(3).Infof("pod-%v is a standalone Pod, move it directly.", id)
-		f = func(c *kubernetes.Clientset, ns, pname, cname, sname string) (string, error) { return "", nil }
-	case KindReplicationController:
-		glog.V(3).Infof("pod-%v parent is a ReplicationController-%v", id, parentName)
-		f = updateRCscheduler
-	case KindReplicaSet:
-		glog.V(2).Infof("pod-%v parent is a ReplicaSet-%v", id, parentName)
-		f = updateRSscheduler
-	default:
-		err = fmt.Errorf("unsupported parent-[%v] Kind-[%v]", parentName, parentKind)
-		glog.Warning(err.Error())
-		return err
+	//2.1 if pod is barely standalone pod, move it directly
+	if parentKind == "" {
+		return movePod(client, pod, nodeName)
 	}
 
-	preScheduler, err := f(client, nameSpace, parentName, "", *noexistSchedulerName)
-	defer f(client, nameSpace, parentName, *noexistSchedulerName, preScheduler)
-	if err != nil {
-		err = fmt.Errorf("move-failed: update pod-%v parent-%v scheduler failed:%v", id, parentName, err.Error())
-		glog.Error(err.Error())
-		return err
-	}
-
-	//3. movePod
-	err = movePod(client, pod, nodeName)
-	if err != nil {
-		return err
+	//2.2 if pod controlled by ReplicationController/ReplicaSet, then need to do more
+	if *k8sVersion == "1.5" {
+		return doSchedulerMove15(client, pod, parentKind, parentName, nodeName)
+	} else {
+		return doSchedulerMove(client, pod, parentKind, parentName, nodeName)
 	}
 
 	return nil
