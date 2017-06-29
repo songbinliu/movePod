@@ -11,10 +11,9 @@ import (
 
 //provides some utilities for Kubernetes 1.5 and older
 const (
-	SchedulerAnnotationKey="scheduler.alpha.kubernetes.io/name"
-	EmptyScheduler = "None"
+	SchedulerAnnotationKey = "scheduler.alpha.kubernetes.io/name"
+	EmptyScheduler         = "None"
 )
-
 
 func getSchedulerName15(kclient *client.Clientset, kind, nameSpace, name string) (string, error) {
 	var annotes *map[string]string = nil
@@ -67,9 +66,11 @@ func updateAnnotedScheduler2(pod *v1.PodTemplateSpec, newName string) string {
 		pod.Annotations = make(map[string]string)
 	}
 
-	defer func() { if len(pod.Annotations) == 0 {
-		pod.Annotations = nil
-	}} ()
+	defer func() {
+		if len(pod.Annotations) == 0 {
+			pod.Annotations = nil
+		}
+	}()
 
 	if newName == EmptyScheduler {
 		current, ok := pod.Annotations[SchedulerAnnotationKey]
@@ -197,6 +198,7 @@ func updateRCscheduler15(client *client.Clientset, nameSpace, rcName, schedulerN
 
 	_, err = rcClient.Update(rc)
 	if err != nil {
+		//TODO: check whether to retry
 		err = fmt.Errorf("failed to update RC-%v:%v\n", id, err.Error())
 		glog.Error(err.Error())
 		return currentName, err
@@ -237,6 +239,7 @@ func updateRSscheduler15(client *client.Clientset, nameSpace, rsName, schedulerN
 
 	_, err = rsClient.Update(rs)
 	if err != nil {
+		//TODO: check whether to retry
 		err = fmt.Errorf("failed to update RC-%v:%v\n", id, err.Error())
 		glog.Error(err.Error())
 		return currentName, err
@@ -246,4 +249,3 @@ func updateRSscheduler15(client *client.Clientset, nameSpace, rsName, schedulerN
 
 	return currentName, nil
 }
-

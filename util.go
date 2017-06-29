@@ -227,6 +227,7 @@ func updateRSscheduler(client *client.Clientset, nameSpace, rsName, schedulerNam
 	rs.Spec.Template.Spec.SchedulerName = schedulerName
 	_, err = rsClient.Update(rs)
 	if err != nil {
+		//TODO: check whether need to retry
 		err = fmt.Errorf("failed to update RC-%v:%v\n", id, err.Error())
 		glog.Error(err.Error())
 		return currentName, err
@@ -257,6 +258,7 @@ func updateRCscheduler(client *client.Clientset, nameSpace, rcName, schedulerNam
 	rc.Spec.Template.Spec.SchedulerName = schedulerName
 	rc, err = rcClient.Update(rc)
 	if err != nil {
+		//TODO: check whether need to retry
 		err = fmt.Errorf("failed to update RC-%v:%v\n", id, err.Error())
 		glog.Error(err.Error())
 		return currentName, err
