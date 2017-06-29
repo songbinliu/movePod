@@ -202,7 +202,6 @@ func checkSchedulerName(client *client.Clientset, kind, nameSpace, name, expecte
 }
 
 //update the schedulerName of a ReplicaSet to <schedulerName>
-// Note: if condName is not empty, then only current schedulerName is same to condName, then will do the update.
 // return the previous schedulerName
 func updateRSscheduler(client *client.Clientset, nameSpace, rsName, schedulerName string) (string, error) {
 	currentName := ""
@@ -221,6 +220,11 @@ func updateRSscheduler(client *client.Clientset, nameSpace, rsName, schedulerNam
 		err = fmt.Errorf("failed to get ReplicaSet-%v: %v", id, err.Error())
 		glog.Error(err.Error())
 		return currentName, err
+	}
+
+	if rs.Spec.Template.Spec.SchedulerName == schedulerName {
+		glog.V(3).Infof("no need to update schedulerName for RS-[%v]", rsName)
+		return "", nil
 	}
 
 	//2. update schedulerName
@@ -252,6 +256,11 @@ func updateRCscheduler(client *client.Clientset, nameSpace, rcName, schedulerNam
 		err = fmt.Errorf("failed to get ReplicationController-%v: %v\n", id, err.Error())
 		glog.Error(err.Error())
 		return currentName, err
+	}
+
+	if rc.Spec.Template.Spec.SchedulerName == schedulerName {
+		glog.V(3).Infof("no need to update schedulerName for RC-[%v]", rcName)
+		return "", nil
 	}
 
 	//2. update
