@@ -4,8 +4,10 @@ This project demonstrates a method that can move pods, which either are created 
 # Method #
 **1.** set the schedulerName of the parent object (ReplicationController, or ReplicaSet) of the pod to a **invalid scheduler**; 
 
-**2.** move the pod by [**Copy-Delete-Create**](https://github.com/songbinliu/movePod/blob/master/util.go#L284) steps, and uses the **Binding-on-Creation** way by assigning [pod.Spec.NodeName](https://github.com/kubernetes/client-go/blob/master/pkg/api/v1/types.go#L2470) (alternatively, Binding-on-Creation is not necessary, but it can save a Bind() API call.)
+**2.** move the pod by [**Copy-Delete-Create**](https://github.com/songbinliu/movePod/blob/master/util.go#L284) steps, and uses the **Binding-on-Creation** way by assigning [pod.Spec.NodeName](https://github.com/kubernetes/client-go/blob/master/pkg/api/v1/types.go#L2470) 
 when to create the new the Pod. 
+(Note: Insteand of Binding-on-Creation, a **Create**() + a **Bind**() API call can do the same work.)
+
 
 **3.** restore the schedulerName of the parent object.
 
