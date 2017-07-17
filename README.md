@@ -19,7 +19,9 @@ It is difficult to move a Pod controlled by ReplicationController/ReplicaSet, be
 
 ## Problem ##
 For pods controlled by ReplicationController/ReplicaSet, when one of them is killed, the ReplicationController/ReplicaSet will 
-be get notified, and create a new pod. The ReplicationController/ReplicaSet will create a new Pod immediately to make sure there is enough number of Running replicas. However, ReplicationController/ReplicaSet also makes sure that there is no more than desired number of Running replicas. Since we will create a new Pod too, so the ControllerManager will decide to delete one of the two Pods: the pod newly created by ControllerManager, and the pod created by our MoveOperation. 
+be get notified, and create a new pod. The ReplicationController/ReplicaSet will create a new Pod immediately to make sure there is enough number of Running replicas. However, ReplicationController/ReplicaSet also makes sure that there is no more than desired number of Running replicas. 
+
+Since we will create a new Pod too, so the ControllerManager will decide to delete one of the two Pods: the pod newly created by ControllerManager, and the pod created by our MoveOperation. How to make sure that the pod created by our MoveOperation will survive?
 
 ## ControllerManager ##
 According to the code of [ReplicationController](https://github.com/kubernetes/kubernetes/blob/release-1.7/pkg/controller/replication/replication_controller.go#L498), when ReplicationController decides which Pods are to be deleted, it will sort the Pod of the ReplicationController according [some conditions](https://github.com/kubernetes/kubernetes/blob/release-1.7/pkg/controller/controller_utils.go#L726) of the pods. The first condition is to check whether a Pod is assigned a Node or not. If a Pod is not assigned a Node, then it will be deleted first.
