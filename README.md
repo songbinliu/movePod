@@ -15,7 +15,7 @@ It should be noted that, if the pod has no parent object, then only the second s
 
 # How it works #
 
-It is difficult to move a Pod controlled by ReplicationController/ReplicaSet, because in the second step of the [**Copy-Delete-Create**] move operation, the ReplicationController/ReplicaSet will create a new Pod immediately to make sure there is enough number of Running replicas. However, ReplicationController/ReplicaSet also amkes sure that there is no more than desired number of Running replicas. 
+It is difficult to move a Pod controlled by ReplicationController/ReplicaSet, because in the second step of the [**Copy-Delete-Create**] move operation, the ReplicationController/ReplicaSet will create a new Pod immediately to make sure there is enough number of Running replicas. However, ReplicationController/ReplicaSet also amkes sure that there is no more than desired number of Running replicas. So the pod created by our move operation have to compete with the pod created by ReplicationController/ReplicaSet.
 
 According to the code of [ReplicationController](https://github.com/kubernetes/kubernetes/blob/release-1.7/pkg/controller/replication/replication_controller.go#L498), when ReplicationController decides which Pods are to be deleted, it will sorts the Pod of the ReplicationController according [some conditions](https://github.com/kubernetes/kubernetes/blob/release-1.7/pkg/controller/controller_utils.go#L726) of the pods. The first condition is to check whether a Pod is assigned a Node or not. If a Pod is not assigned a Node, then it will be deleted first.
 ```go
@@ -60,11 +60,11 @@ func (s ActivePods) Less(i, j int) bool {
 }
 ```
 
-So the pod created by our move operation have to compete with the pod created by ReplicationController/ReplicaSet: [the first to get to **running** state will survive (see experiment)](https://gist.github.com/songbinliu/7576bd84bab50f4e399d979d7998cdf6#an-experiment).
-
+ [the first to get to **assigned** state will survive (see experiment)](https://gist.github.com/songbinliu/7576bd84bab50f4e399d979d7998cdf6#an-experiment).
+ 
 If we can make sure that the pod created by ReplicationController/ReplicaSet is scheduled **later than** the pod 
-created by our move operation, then our pod will almost alway be quicker to get to **running** state. We achive this by assigning an none-exist scheduler name to the ReplictionController/ReplicaSet before the **Delete** step: which makes sure 
-the pod created by ReplicationController/ReplicaSet won't be scheduled. And because our pod don't need to be scheduled, and bind to the new node directly. So our pod will get to the **running** state first. (But if the new node is too slow to run the pod, or failed to run the pod, then our pod will be deleted.)
+created by our move operation, then our pod will almost alway be quicker to get to **assigned** state. We achive this by assigning an none-exist scheduler name to the ReplictionController/ReplicaSet before the **Delete** step: which makes sure 
+the pod created by ReplicationController/ReplicaSet won't be scheduled. And because our pod don't need to be scheduled, and bind to the new node directly. So our pod will get to the **assigned** state first. (But if the new node is too slow to run the pod, or failed to run the pod, then our pod will be deleted.)
 
 In the end of the move operation, we restore the scheduler name of the ReplicationController/ReplicaSet, to clear everything.
 
