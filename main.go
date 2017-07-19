@@ -15,11 +15,11 @@ import (
 var (
 	masterUrl            *string
 	kubeConfig           *string
-	nameSpace            *string
-	podName              *string
-	noexistSchedulerName *string
-	nodeName             *string
-	k8sVersion           *string
+	nameSpace            string
+	podName              string
+	noexistSchedulerName string
+	nodeName             string
+	k8sVersion           string
 )
 
 const (
@@ -32,11 +32,11 @@ const (
 func setFlags() {
 	masterUrl = flag.String("masterUrl", "", "master url")
 	kubeConfig = flag.String("kubeConfig", "", "absolute path to the kubeconfig file")
-	nameSpace = flag.String("nameSpace", "default", "kubernetes object namespace")
-	podName = flag.String("podName", "myschedule-cpu-80", "the podName to be handled")
-	noexistSchedulerName = flag.String("scheduler-name", DefaultNoneExistSchedulerName, "the name of the none-exist-scheduler")
-	nodeName = flag.String("nodeName", "", "Destination of move")
-	k8sVersion = flag.String("k8sVersion", "1.6", "the version of Kubenetes cluster, candidates are 1.5 | 1.6")
+	flag.StringVar(&nameSpace, "nameSpace", "default", "kubernetes object namespace")
+	flag.StringVar(&podName, "podName", "myschedule-cpu-80", "the podName to be handled")
+	flag.StringVar(&noexistSchedulerName, "scheduler-name", DefaultNoneExistSchedulerName, "the name of the none-exist-scheduler")
+	flag.StringVar(&nodeName, "nodeName", "", "Destination of move")
+	flag.StringVar(&k8sVersion, "k8sVersion", "1.6", "the version of Kubenetes cluster, candidates are 1.5 | 1.6")
 
 	flag.Set("alsologtostderr", "true")
 	flag.Parse()
@@ -60,7 +60,7 @@ func addErrors(prefix string, err1, err2 error) error {
 func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, parentName, nodeName string) error {
 	id := fmt.Sprintf("%v/%v", pod.Namespace, pod.Name)
 	//2. update the schedulerName
-	var update func(*kubernetes.Clientset, string, string, string) (string, error)
+	var update func(*kubernetes.Clientset, string, string, string, int) (string, error)
 	switch parentKind {
 	case KindReplicationController:
 		glog.V(3).Infof("pod-%v parent is a ReplicationController-%v", id, parentName)
@@ -74,11 +74,11 @@ func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, pare
 		return err
 	}
 
-	noexist := *noexistSchedulerName
+	noexist := noexistSchedulerName
 	check := checkSchedulerName
 	nameSpace := pod.Namespace
 
-	preScheduler, err := update(client, nameSpace, parentName, noexist)
+	preScheduler, err := update(client, nameSpace, parentName, noexist, 1)
 	if flag, err2 := check(client, parentKind, nameSpace, parentName, noexist); !flag {
 		prefix := fmt.Sprintf("move-failed: pod-[%v], parent-[%v]", id, parentName)
 		return addErrors(prefix, err, err2)
@@ -87,13 +87,18 @@ func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, pare
 	restore := func() {
 		//check it again in case somebody has changed it back.
 		if flag, _ := check(client, parentKind, nameSpace, parentName, noexist); flag {
-			update(client, nameSpace, parentName, preScheduler)
+			update(client, nameSpace, parentName, preScheduler, DefaultRetryMore)
+		}
+
+		err := cleanPendingPod(client, nameSpace, noexist, parentKind, parentName)
+		if err != nil {
+			glog.Error("failed to clean pending pod for MoveAction:%v", err.Error())
 		}
 	}
 	defer restore()
 
 	//3. movePod
-	return  movePod(client, pod, nodeName)
+	return  movePod(client, pod, nodeName, DefaultRetryLess)
 }
 
 func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) error {
@@ -126,11 +131,11 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 
 	//2.1 if pod is barely standalone pod, move it directly
 	if parentKind == "" {
-		return movePod(client, pod, nodeName)
+		return movePod(client, pod, nodeName, DefaultRetryLess)
 	}
 
 	//2.2 if pod controlled by ReplicationController/ReplicaSet, then need to do more
-	if *k8sVersion == "1.5" {
+	if k8sVersion == "1.5" {
 		return doSchedulerMove15(client, pod, parentKind, parentName, nodeName)
 	} else {
 		return doSchedulerMove(client, pod, parentKind, parentName, nodeName)
@@ -149,22 +154,22 @@ func main() {
 		return
 	}
 
-	if *nodeName == "" {
+	if nodeName == "" {
 		glog.Errorf("nodeName should not be empty.")
 		return
 	}
 
-	if err := MovePod(kubeClient, *nameSpace, *podName, *nodeName); err != nil {
-		glog.Errorf("move pod failed: %v/%v, %v", *nameSpace, *podName, err.Error())
+	if err := MovePod(kubeClient, nameSpace, podName, nodeName); err != nil {
+		glog.Errorf("move pod failed: %v/%v, %v", nameSpace, podName, err.Error())
 		return
 	}
 
 	glog.V(2).Infof("sleep 10 seconds to check the final state")
 	time.Sleep(time.Second * 10)
-	if err := checkPodMoveHealth(kubeClient, *nameSpace, *podName, *nodeName); err != nil {
+	if err := checkPodMoveHealth(kubeClient, nameSpace, podName, nodeName); err != nil {
 		glog.Errorf("move pod failed: %v", err.Error())
 		return
 	}
 
-	glog.V(2).Infof("move pod(%v/%v) to node-%v successfully", *nameSpace, *podName, *nodeName)
+	glog.V(2).Infof("move pod(%v/%v) to node-%v successfully", nameSpace, podName, nodeName)
 }

@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	//"time"
+	"time"
 
 	"github.com/golang/glog"
 
@@ -12,11 +12,16 @@ import (
 	"k8s.io/client-go/pkg/api/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	//"k8s.io/apimachinery/pkg/labels"
 )
 
 const (
 	// Set the grace period to 0 for deleting the pod immediately.
-	DefaultPodGracePeriod int64 = 0
+	DefaultPodGracePeriod int64 = 10
+	DefaultRetryLess int = 2
+	DefaultRetryMore int = 5
+	DefaultTimeOut = time.Second*32
+	DefaultSleep = time.Second*5
 )
 
 func printPods(pods *v1.PodList) {
@@ -203,7 +208,7 @@ func checkSchedulerName(client *client.Clientset, kind, nameSpace, name, expecte
 
 //update the schedulerName of a ReplicaSet to <schedulerName>
 // return the previous schedulerName
-func updateRSscheduler(client *client.Clientset, nameSpace, rsName, schedulerName string) (string, error) {
+func updateRSscheduler(client *client.Clientset, nameSpace, rsName, schedulerName string, retryNum int) (string, error) {
 	currentName := ""
 
 	rsClient := client.ExtensionsV1beta1().ReplicaSets(nameSpace)
@@ -229,7 +234,11 @@ func updateRSscheduler(client *client.Clientset, nameSpace, rsName, schedulerNam
 
 	//2. update schedulerName
 	rs.Spec.Template.Spec.SchedulerName = schedulerName
-	_, err = rsClient.Update(rs)
+	err = retryDuring(retryNum, DefaultTimeOut, DefaultSleep, func() error {
+		_, inerr := rsClient.Update(rs)
+		return inerr
+	})
+	//_, err = rsClient.Update(rs)
 	if err != nil {
 		//TODO: check whether need to retry
 		err = fmt.Errorf("failed to update RC-%v:%v\n", id, err.Error())
@@ -243,7 +252,7 @@ func updateRSscheduler(client *client.Clientset, nameSpace, rsName, schedulerNam
 //update the schedulerName of a ReplicationController
 // if condName is not empty, then only current schedulerName is same to condName, then will do the update.
 // return the previous schedulerName; or return "" if update failed.
-func updateRCscheduler(client *client.Clientset, nameSpace, rcName, schedulerName string) (string, error) {
+func updateRCscheduler(client *client.Clientset, nameSpace, rcName, schedulerName string, retryNum int) (string, error) {
 	currentName := ""
 
 	id := fmt.Sprintf("%v/%v", nameSpace, rcName)
@@ -265,7 +274,10 @@ func updateRCscheduler(client *client.Clientset, nameSpace, rcName, schedulerNam
 
 	//2. update
 	rc.Spec.Template.Spec.SchedulerName = schedulerName
-	rc, err = rcClient.Update(rc)
+	err = retryDuring(retryNum, DefaultTimeOut, DefaultSleep, func() error {
+		_, inerr := rcClient.Update(rc)
+		return inerr
+	})
 	if err != nil {
 		//TODO: check whether need to retry
 		err = fmt.Errorf("failed to update RC-%v:%v\n", id, err.Error())
@@ -276,8 +288,34 @@ func updateRCscheduler(client *client.Clientset, nameSpace, rcName, schedulerNam
 	return currentName, nil
 }
 
+func retryDuring(attempts int, timeout time.Duration, sleep time.Duration, myfunc func() error) error {
+	t0 := time.Now()
+
+	var err error
+	for i := 0; ; i ++ {
+		if err = myfunc(); err == nil {
+			return nil
+		}
+		if i >= (attempts-1) {
+			break
+		}
+
+		if timeout > 1 {
+			if delta := time.Now().Sub(t0); delta > timeout {
+				return fmt.Errorf("after %d attepmts (during %d) last error: %s", i, delta, err.Error())
+			}
+		}
+
+		if(sleep > 1) {
+			time.Sleep(sleep)
+		}
+	}
+
+	return fmt.Errorf("after %d attepmts last error: %s", attempts, err.Error())
+}
+
 // move pod nameSpace/podName to node nodeName
-func movePod(client *client.Clientset, pod *v1.Pod, nodeName string) error {
+func movePod(client *client.Clientset, pod *v1.Pod, nodeName string, retryNum int) error {
 	podClient := client.CoreV1().Pods(pod.Namespace)
 	if podClient == nil {
 		err := fmt.Errorf("cannot get Pod client for nameSpace:%v", pod.Namespace)
@@ -295,7 +333,7 @@ func movePod(client *client.Clientset, pod *v1.Pod, nodeName string) error {
 	npod.Spec.NodeName = nodeName
 
 	//2. kill original pod
-	var grace int64 = 0
+	var grace int64 = 10
 	delOption := &metav1.DeleteOptions{GracePeriodSeconds: &grace}
 	err := podClient.Delete(pod.Name, delOption)
 	if err != nil {
@@ -307,8 +345,12 @@ func movePod(client *client.Clientset, pod *v1.Pod, nodeName string) error {
 
 	//3. create (and bind) the new Pod
 	//glog.V(2).Infof("sleep 10 seconds to test the behaivor of quicker ReplicationController")
-	//time.Sleep(time.Second * 10) // this line is for experiments
-	_, err = podClient.Create(npod)
+	time.Sleep(time.Duration(grace) * time.Second) // this line is for experiments
+	du := time.Duration(grace) * time.Second
+	err = retryDuring(retryNum, du*time.Duration(retryNum), (du - 2), func() error {
+		_, inerr := podClient.Create(npod)
+		return inerr
+	})
 	if err != nil {
 		err = fmt.Errorf("move-failed: failed to create new pod-%v: %v",
 			id, err.Error())
@@ -349,4 +391,49 @@ func checkPodMoveHealth(client *client.Clientset, nameSpace, podName, nodeName s
 	}
 
 	return nil
+}
+
+//clean the Pods created by Controller during move
+func cleanPendingPod(client *client.Clientset, nameSpace, schedulerName, parentKind, parentName string) error {
+
+	podClient := client.CoreV1().Pods(nameSpace)
+
+	option := metav1.ListOptions{
+		FieldSelector: "status.phase=" + string(v1.PodPending),
+	}
+
+	pods, err := podClient.List(option);
+	if err != nil {
+		glog.Error("failed to cleanPendingPod: %s", err.Error())
+		return err
+	}
+
+	var grace int64 = 0
+	delOption := &metav1.DeleteOptions{GracePeriodSeconds: &grace}
+	for i := range pods.Items {
+		pod := &(pods.Items[i])
+
+		if pod.Spec.SchedulerName != schedulerName {
+			continue
+		}
+
+		kind, pname, err1 := getParentInfo(pod);
+		if err1 != nil || pname == "" {
+			continue
+		}
+
+		//clean all the pending Pod, not only for this operation.
+		if parentKind != kind {//&& parentName != pname {
+			continue
+		}
+
+		glog.V(3).Infof("Begin to delete Pending pod:%s/%s", nameSpace, pod.Name)
+		err2 := podClient.Delete(pod.Name, delOption)
+		if err2 != nil {
+			glog.Error("failed ot delete pending pod:%s/%s: %s", nameSpace, pod.Name, err2.Error())
+			err = fmt.Errorf("%s; %s", err.Error(), err2.Error())
+		}
+	}
+
+	return err
 }
