@@ -13,8 +13,8 @@ import (
 
 //global variables
 var (
-	masterUrl            *string
-	kubeConfig           *string
+	masterUrl            string
+	kubeConfig           string
 	nameSpace            string
 	podName              string
 	noexistSchedulerName string
@@ -30,8 +30,8 @@ const (
 )
 
 func setFlags() {
-	masterUrl = flag.String("masterUrl", "", "master url")
-	kubeConfig = flag.String("kubeConfig", "", "absolute path to the kubeconfig file")
+	flag.StringVar(&masterUrl, "masterUrl", "", "master url")
+	flag.StringVar(&kubeConfig, "kubeConfig", "", "absolute path to the kubeconfig file")
 	flag.StringVar(&nameSpace, "nameSpace", "default", "kubernetes object namespace")
 	flag.StringVar(&podName, "podName", "myschedule-cpu-80", "the podName to be handled")
 	flag.StringVar(&noexistSchedulerName, "scheduler-name", DefaultNoneExistSchedulerName, "the name of the none-exist-scheduler")
@@ -79,7 +79,9 @@ func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, pare
 	nameSpace := pod.Namespace
 
 	preScheduler, err := update(client, nameSpace, parentName, noexist, 1)
-	if flag, err2 := check(client, parentKind, nameSpace, parentName, noexist); !flag {
+	flag, err2 := check(client, parentKind, nameSpace, parentName, noexist);
+	if !flag {
+		//only check flag, to decide whether "restore" is needed.
 		prefix := fmt.Sprintf("move-failed: pod-[%v], parent-[%v]", id, parentName)
 		return addErrors(prefix, err, err2)
 	}
@@ -98,7 +100,11 @@ func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, pare
 	defer restore()
 
 	//3. movePod
-	return  movePod(client, pod, nodeName, DefaultRetryLess)
+	if err != nil || err2 != nil {
+		prefix := fmt.Sprintf("move-failed: pod-[%v], parent-[%v]", pod.Name, parentName)
+		return addErrors(prefix, err, err2)
+	}
+	return movePod(client, pod, nodeName, DefaultRetryLess)
 }
 
 func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) error {
@@ -135,7 +141,7 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 	}
 
 	//2.2 if pod controlled by ReplicationController/ReplicaSet, then need to do more
-	if k8sVersion == "1.5" {
+	if compareVersion(k8sVersion, "1.6.0") < 0 {
 		return doSchedulerMove15(client, pod, parentKind, parentName, nodeName)
 	} else {
 		return doSchedulerMove(client, pod, parentKind, parentName, nodeName)
@@ -150,7 +156,7 @@ func main() {
 
 	kubeClient := getKubeClient(masterUrl, kubeConfig)
 	if kubeClient == nil {
-		glog.Errorf("failed to get a k8s client for masterUrl=[%v], kubeConfig=[%v]", *masterUrl, *kubeConfig)
+		glog.Errorf("failed to get a k8s client for masterUrl=[%v], kubeConfig=[%v]", masterUrl, kubeConfig)
 		return
 	}
 

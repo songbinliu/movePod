@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"time"
+	"strings"
+	"strconv"
 
 	"github.com/golang/glog"
 
@@ -38,6 +40,41 @@ func printPods(pods *v1.PodList) {
 			pod.Spec.NodeName,
 			pod.Status.HostIP)
 	}
+}
+
+func compareVersion(version1, version2 string) int {
+	a1 := strings.Split(version1, ".")
+	a2 := strings.Split(version2, ".")
+
+	l1 := len(a1)
+	l2 := len(a2)
+	mlen := l1
+	if mlen < l2 {
+		mlen = l2
+	}
+
+	for i := 0; i < mlen; i ++ {
+		b1 := 0
+		if i < l1 {
+			if tmp, err := strconv.Atoi(a1[i]); err != nil {
+				b1 = tmp
+			}
+		}
+
+		b2 := 0
+		if i < l2 {
+			if tmp, err := strconv.Atoi(a2[i]); err != nil {
+				b2 = tmp
+			}
+		}
+
+		if b1 != b2 {
+			return b1 - b2
+		}
+
+	}
+
+	return 0
 }
 
 func listPod(client *client.Clientset) {
@@ -144,8 +181,8 @@ func getParentInfo(pod *v1.Pod) (string, string, error) {
 	return "", "", nil
 }
 
-func getKubeClient(masterUrl, kubeConfig *string) *client.Clientset {
-	if *masterUrl == "" && *kubeConfig == "" {
+func getKubeClient(masterUrl, kubeConfig string) *client.Clientset {
+	if masterUrl == "" && kubeConfig == "" {
 		fmt.Println("must specify masterUrl or kubeConfig.")
 		return nil
 	}
@@ -153,10 +190,10 @@ func getKubeClient(masterUrl, kubeConfig *string) *client.Clientset {
 	var err error
 	var config *restclient.Config
 
-	if *kubeConfig != "" {
-		config, err = clientcmd.BuildConfigFromFlags("", *kubeConfig)
+	if kubeConfig != "" {
+		config, err = clientcmd.BuildConfigFromFlags("", kubeConfig)
 	} else {
-		config, err = clientcmd.BuildConfigFromFlags(*masterUrl, "")
+		config, err = clientcmd.BuildConfigFromFlags(masterUrl, "")
 	}
 
 	if err != nil {
@@ -296,6 +333,8 @@ func retryDuring(attempts int, timeout time.Duration, sleep time.Duration, myfun
 		if err = myfunc(); err == nil {
 			return nil
 		}
+
+		glog.Warning(err.Error())
 		if i >= (attempts-1) {
 			break
 		}

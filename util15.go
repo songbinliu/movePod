@@ -152,7 +152,9 @@ func doSchedulerMove15(kclient *client.Clientset, pod *v1.Pod, parentKind, paren
 	nameSpace := pod.Namespace
 
 	preScheduler, err := update(kclient, nameSpace, parentName, noexist, 1)
-	if flag, err2 := check(kclient, parentKind, nameSpace, parentName, noexist); !flag {
+	flag, err2 := check(kclient, parentKind, nameSpace, parentName, noexist)
+	if !flag {
+		//only check flag to decide whether "restore" is needed or not
 		prefix := fmt.Sprintf("move-failed: pod-[%v], parent-[%v]", pod.Name, parentName)
 		return addErrors(prefix, err, err2)
 	}
@@ -171,6 +173,10 @@ func doSchedulerMove15(kclient *client.Clientset, pod *v1.Pod, parentKind, paren
 	defer restore()
 
 	//3. movePod
+	if err != nil || err2 != nil {
+		prefix := fmt.Sprintf("move-failed: pod-[%v], parent-[%v]", pod.Name, parentName)
+		return addErrors(prefix, err, err2)
+	}
 	return movePod(kclient, pod, nodeName, DefaultRetryLess)
 }
 
