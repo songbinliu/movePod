@@ -245,7 +245,7 @@ func checkSchedulerName(client *client.Clientset, kind, nameSpace, name, expecte
 
 //update the schedulerName of a ReplicaSet to <schedulerName>
 // return the previous schedulerName
-func updateRSscheduler(client *client.Clientset, nameSpace, rsName, schedulerName string, retryNum int) (string, error) {
+func updateRSscheduler(client *client.Clientset, nameSpace, rsName, schedulerName string) (string, error) {
 	currentName := ""
 
 	rsClient := client.ExtensionsV1beta1().ReplicaSets(nameSpace)
@@ -271,13 +271,8 @@ func updateRSscheduler(client *client.Clientset, nameSpace, rsName, schedulerNam
 
 	//2. update schedulerName
 	rs.Spec.Template.Spec.SchedulerName = schedulerName
-	err = retryDuring(retryNum, DefaultTimeOut, DefaultSleep, func() error {
-		_, inerr := rsClient.Update(rs)
-		return inerr
-	})
-	//_, err = rsClient.Update(rs)
+	_, err = rsClient.Update(rs)
 	if err != nil {
-		//TODO: check whether need to retry
 		err = fmt.Errorf("failed to update RC-%v:%v\n", id, err.Error())
 		glog.Error(err.Error())
 		return currentName, err
@@ -289,7 +284,7 @@ func updateRSscheduler(client *client.Clientset, nameSpace, rsName, schedulerNam
 //update the schedulerName of a ReplicationController
 // if condName is not empty, then only current schedulerName is same to condName, then will do the update.
 // return the previous schedulerName; or return "" if update failed.
-func updateRCscheduler(client *client.Clientset, nameSpace, rcName, schedulerName string, retryNum int) (string, error) {
+func updateRCscheduler(client *client.Clientset, nameSpace, rcName, schedulerName string) (string, error) {
 	currentName := ""
 
 	id := fmt.Sprintf("%v/%v", nameSpace, rcName)
@@ -311,14 +306,10 @@ func updateRCscheduler(client *client.Clientset, nameSpace, rcName, schedulerNam
 
 	//2. update
 	rc.Spec.Template.Spec.SchedulerName = schedulerName
-	err = retryDuring(retryNum, DefaultTimeOut, DefaultSleep, func() error {
-		_, inerr := rcClient.Update(rc)
-		return inerr
-	})
+	_, err = rcClient.Update(rc)
 	if err != nil {
-		//TODO: check whether need to retry
 		err = fmt.Errorf("failed to update RC-%v:%v\n", id, err.Error())
-		glog.Error(err.Error())
+		glog.Warning(err.Error())
 		return currentName, err
 	}
 
@@ -331,17 +322,20 @@ func retryDuring(attempts int, timeout time.Duration, sleep time.Duration, myfun
 	var err error
 	for i := 0; ; i ++ {
 		if err = myfunc(); err == nil {
+			glog.V(2).Infof("[retry-%d/%d] success", i+1, attempts)
 			return nil
 		}
 
-		glog.Warning(err.Error())
+		glog.V(2).Infof("[retry-%d/%d] %s", i+1, attempts, err.Error())
 		if i >= (attempts-1) {
 			break
 		}
 
 		if timeout > 1 {
 			if delta := time.Now().Sub(t0); delta > timeout {
-				return fmt.Errorf("after %d attepmts (during %d) last error: %s", i, delta, err.Error())
+				err = fmt.Errorf("after %d attepmts (during %d) last error: %s", i, delta, err.Error())
+				glog.Error(err.Error())
+				return err
 			}
 		}
 
@@ -350,7 +344,9 @@ func retryDuring(attempts int, timeout time.Duration, sleep time.Duration, myfun
 		}
 	}
 
-	return fmt.Errorf("after %d attepmts last error: %s", attempts, err.Error())
+	err = fmt.Errorf("after %d attepmts last error: %s", attempts, err.Error())
+	glog.Error(err.Error())
+	return err
 }
 
 // move pod nameSpace/podName to node nodeName

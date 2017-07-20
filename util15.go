@@ -133,7 +133,7 @@ func updateAnnotedScheduler(annotes map[string]string, value string) string {
 func doSchedulerMove15(kclient *client.Clientset, pod *v1.Pod, parentKind, parentName, nodeName string) error {
 	id := fmt.Sprintf("%v/%v", pod.Namespace, pod.Name)
 	//2. update the schedulerName
-	var update func(*client.Clientset, string, string, string, int) (string, error)
+	var update func(*client.Clientset, string, string, string) (string, error)
 	switch parentKind {
 	case KindReplicationController:
 		glog.V(3).Infof("pod-%v parent is a ReplicationController-%v", id, parentName)
@@ -151,7 +151,7 @@ func doSchedulerMove15(kclient *client.Clientset, pod *v1.Pod, parentKind, paren
 	check := checkSchedulerName15
 	nameSpace := pod.Namespace
 
-	preScheduler, err := update(kclient, nameSpace, parentName, noexist, 1)
+	preScheduler, err := update(kclient, nameSpace, parentName, noexist)
 	flag, err2 := check(kclient, parentKind, nameSpace, parentName, noexist)
 	if !flag {
 		//only check flag to decide whether "restore" is needed or not
@@ -162,7 +162,10 @@ func doSchedulerMove15(kclient *client.Clientset, pod *v1.Pod, parentKind, paren
 	restore := func() {
 		//check it again in case somebody has changed it to something else.
 		if flag, _ := check(kclient, parentKind, nameSpace, parentName, noexist); flag {
-			update(kclient, nameSpace, parentName, preScheduler, DefaultRetryMore)
+			retryDuring(DefaultRetryMore, DefaultTimeOut, DefaultSleep, func() error {
+				update(kclient, nameSpace, parentName, preScheduler)
+				return nil
+			})
 		}
 
 		err := cleanPendingPod(kclient, nameSpace, noexist, parentKind, parentName)
@@ -182,7 +185,7 @@ func doSchedulerMove15(kclient *client.Clientset, pod *v1.Pod, parentKind, paren
 
 //update the schedulerName of a ReplicationController
 // return the previous schedulerName, or return "" if update is not necessary or updated failed.
-func updateRCscheduler15(client *client.Clientset, nameSpace, rcName, schedulerName string, retryNum int) (string, error) {
+func updateRCscheduler15(client *client.Clientset, nameSpace, rcName, schedulerName string) (string, error) {
 	currentName := ""
 
 	id := fmt.Sprintf("%v/%v", nameSpace, rcName)
@@ -207,11 +210,7 @@ func updateRCscheduler15(client *client.Clientset, nameSpace, rcName, schedulerN
 		return "", nil
 	}
 
-	//_, err = rcClient.Update(rc)
-	err = retryDuring(retryNum, DefaultTimeOut, DefaultSleep, func() error {
-		_, inerr := rcClient.Update(rc)
-		return inerr
-	})
+	_, err = rcClient.Update(rc)
 	if err != nil {
 		//TODO: check whether to retry
 		err = fmt.Errorf("failed to update RC-%v:%v\n", id, err.Error())
@@ -226,7 +225,7 @@ func updateRCscheduler15(client *client.Clientset, nameSpace, rcName, schedulerN
 
 //update the schedulerName of a ReplicaSet to <schedulerName>
 // return the previous schedulerName
-func updateRSscheduler15(client *client.Clientset, nameSpace, rsName, schedulerName string, retryNum int) (string, error) {
+func updateRSscheduler15(client *client.Clientset, nameSpace, rsName, schedulerName string) (string, error) {
 	currentName := ""
 
 	id := fmt.Sprintf("%v/%v", nameSpace, rsName)
@@ -252,10 +251,6 @@ func updateRSscheduler15(client *client.Clientset, nameSpace, rsName, schedulerN
 		return "", nil
 	}
 
-	err = retryDuring(retryNum, DefaultTimeOut, DefaultSleep, func() error{
-		_, err = rsClient.Update(rs)
-		return err
-	})
 	_, err = rsClient.Update(rs)
 	if err != nil {
 		//TODO: check whether to retry

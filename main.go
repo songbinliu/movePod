@@ -62,7 +62,7 @@ func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, pare
 	id := fmt.Sprintf("%v/%v", pod.Namespace, pod.Name)
 
 	//2. update the schedulerName
-	var update func(*kubernetes.Clientset, string, string, string, int) (string, error)
+	var update func(*kubernetes.Clientset, string, string, string) (string, error)
 	switch parentKind {
 	case KindReplicationController:
 		glog.V(3).Infof("pod-%v parent is a ReplicationController-%v", id, parentName)
@@ -89,7 +89,7 @@ func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, pare
 	}
 	nameSpace := pod.Namespace
 
-	preScheduler, err := update(client, nameSpace, parentName, noexist, 1)
+	preScheduler, err := update(client, nameSpace, parentName, noexist)
 	flag, err2 := check(client, parentKind, nameSpace, parentName, noexist);
 	if !flag {
 		//only check flag, to decide whether "restore" is needed.
@@ -100,7 +100,10 @@ func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, pare
 	restore := func() {
 		//check it again in case somebody has changed it back.
 		if flag, _ := check(client, parentKind, nameSpace, parentName, noexist); flag {
-			update(client, nameSpace, parentName, preScheduler, DefaultRetryMore)
+			retryDuring(DefaultRetryMore, DefaultTimeOut, DefaultSleep, func() error{
+				update(client, nameSpace, parentName, preScheduler)
+				return nil
+			})
 		}
 
 		err := cleanPendingPod(client, nameSpace, noexist, parentKind, parentName)
