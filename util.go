@@ -369,6 +369,9 @@ func movePod(client *client.Clientset, pod *v1.Pod, nodeName string, retryNum in
 
 	//2. kill original pod
 	var grace int64 = 10
+	if pod.DeletionGracePeriodSeconds == nil {
+		grace = 0
+	}
 	delOption := &metav1.DeleteOptions{GracePeriodSeconds: &grace}
 	err := podClient.Delete(pod.Name, delOption)
 	if err != nil {
@@ -380,9 +383,9 @@ func movePod(client *client.Clientset, pod *v1.Pod, nodeName string, retryNum in
 
 	//3. create (and bind) the new Pod
 	//glog.V(2).Infof("sleep 10 seconds to test the behaivor of quicker ReplicationController")
-	time.Sleep(time.Duration(grace) * time.Second) // this line is for experiments
+	time.Sleep(time.Duration(grace) * time.Second) // let the previous pod be cleaned up.
 	du := time.Duration(grace) * time.Second
-	err = retryDuring(retryNum, du*time.Duration(retryNum), (du - 2), func() error {
+	err = retryDuring(retryNum, du*time.Duration(retryNum), DefaultSleep, func() error {
 		_, inerr := podClient.Create(npod)
 		return inerr
 	})
