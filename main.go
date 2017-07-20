@@ -58,16 +58,24 @@ func addErrors(prefix string, err1, err2 error) error {
 
 // update the parent's scheduler before moving pod; then restore parent's scheduler
 func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, parentName, nodeName string) error {
+	ver := compareVersion(k8sVersion, "1.6.0")
 	id := fmt.Sprintf("%v/%v", pod.Namespace, pod.Name)
+
 	//2. update the schedulerName
 	var update func(*kubernetes.Clientset, string, string, string, int) (string, error)
 	switch parentKind {
 	case KindReplicationController:
 		glog.V(3).Infof("pod-%v parent is a ReplicationController-%v", id, parentName)
 		update = updateRCscheduler
+		if ver < 0 {
+			update = updateRCscheduler15
+		}
 	case KindReplicaSet:
 		glog.V(2).Infof("pod-%v parent is a ReplicaSet-%v", id, parentName)
 		update = updateRSscheduler
+		if ver < 0 {
+			update = updateRSscheduler15
+		}
 	default:
 		err := fmt.Errorf("unsupported parent-[%v] Kind-[%v]", parentName, parentKind)
 		glog.Warning(err.Error())
@@ -76,6 +84,9 @@ func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, pare
 
 	noexist := noexistSchedulerName
 	check := checkSchedulerName
+	if ver < 0 {
+		check = checkSchedulerName15
+	}
 	nameSpace := pod.Namespace
 
 	preScheduler, err := update(client, nameSpace, parentName, noexist, 1)
@@ -141,13 +152,12 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 	}
 
 	//2.2 if pod controlled by ReplicationController/ReplicaSet, then need to do more
-	if compareVersion(k8sVersion, "1.6.0") < 0 {
-		return doSchedulerMove15(client, pod, parentKind, parentName, nodeName)
-	} else {
-		return doSchedulerMove(client, pod, parentKind, parentName, nodeName)
-	}
-
-	return nil
+	return doSchedulerMove(client, pod, parentKind, parentName, nodeName)
+	//if compareVersion(k8sVersion, "1.6.0") < 0 {
+	//	return doSchedulerMove15(client, pod, parentKind, parentName, nodeName)
+	//} else {
+	//	return doSchedulerMove(client, pod, parentKind, parentName, nodeName)
+	//}
 }
 
 func main() {

@@ -56,14 +56,14 @@ func compareVersion(version1, version2 string) int {
 	for i := 0; i < mlen; i ++ {
 		b1 := 0
 		if i < l1 {
-			if tmp, err := strconv.Atoi(a1[i]); err != nil {
+			if tmp, err := strconv.Atoi(a1[i]); err == nil {
 				b1 = tmp
 			}
 		}
 
 		b2 := 0
 		if i < l2 {
-			if tmp, err := strconv.Atoi(a2[i]); err != nil {
+			if tmp, err := strconv.Atoi(a2[i]); err == nil {
 				b2 = tmp
 			}
 		}
