@@ -101,8 +101,8 @@ func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, pare
 		//check it again in case somebody has changed it back.
 		if flag, _ := check(client, parentKind, nameSpace, parentName, noexist); flag {
 			retryDuring(DefaultRetryMore, DefaultTimeOut, DefaultSleep, func() error{
-				update(client, nameSpace, parentName, preScheduler)
-				return nil
+				_, err3 := update(client, nameSpace, parentName, preScheduler)
+				return err3
 			})
 		}
 
