@@ -1,16 +1,27 @@
-package main
+package util
 
 import (
 	"fmt"
 
-	"time"
 	"github.com/golang/glog"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kclient "k8s.io/client-go/kubernetes"
 	api "k8s.io/client-go/pkg/api/v1"
 )
 
+const (
+	kindReplicationController     = "ReplicationController"
+	kindReplicaSet                = "ReplicaSet"
+
+	podDeletionGracePeriodDefault int64 = 10
+	podDeletionGracePeriodMax     int64 = 10
+	defaultSleep                        = time.Second * 3
+	defaultTimeOut                      = time.Second * 10
+	defaultRetryLess                    = 2
+	defaultRetryMore                    = 4
+)
 
 func calcGracePeriod(pod *api.Pod) int64 {
 	grace := podDeletionGracePeriodDefault
@@ -24,7 +35,7 @@ func calcGracePeriod(pod *api.Pod) int64 {
 }
 
 // move pod nameSpace/podName to node nodeName
-func movePod(client *kclient.Clientset, pod *api.Pod, nodeName string, retryNum int) error {
+func MovePod(client *kclient.Clientset, pod *api.Pod, nodeName string, retryNum int) error {
 	podClient := client.CoreV1().Pods(pod.Namespace)
 	if podClient == nil {
 		err := fmt.Errorf("cannot get Pod client for nameSpace:%v", pod.Namespace)
@@ -111,7 +122,7 @@ func NewMoveHelper(client *kclient.Clientset, nameSpace, name, kind, parentName,
 		controllerName: parentName,
 		schedulerNone:  noneScheduler,
 		flag:           false,
-		key: fmt.Sprintf("%s/%s", nameSpace, podName),
+		key:            fmt.Sprintf("%s/%s", nameSpace, name),
 	}
 
 	switch p.kind {
@@ -192,4 +203,3 @@ func (h *moveHelper) CleanUp() {
 
 	h.UpdateScheduler(h.scheduler, defaultRetryMore)
 }
-

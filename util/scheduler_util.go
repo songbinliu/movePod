@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"fmt"
@@ -104,7 +104,7 @@ func UpdateRCscheduler(client *kclient.Clientset, nameSpace, rcName, schedulerNa
 // for Kubernetes version < 1.6, the schedulerName is set in Pod annotations, not in schedulerName field.
 const (
 	schedulerAnnotationKey = "scheduler.alpha.kubernetes.io/name"
-	emptyScheduler = "None"
+	emptyScheduler         = "None"
 )
 
 func parseAnnotatedScheduler(an map[string]string) (string, error) {
@@ -250,3 +250,19 @@ func UpdateRSscheduler15(client *kclient.Clientset, nameSpace, rsName, scheduler
 
 	return currentName, nil
 }
+
+func ParsePodSchedulerName(pod *api.Pod, highver bool) string {
+
+	if highver {
+		return pod.Spec.SchedulerName
+	}
+
+	if pod.Annotations != nil {
+		if sname, ok := pod.Annotations[schedulerAnnotationKey]; ok {
+			return sname
+		}
+	}
+
+	return ""
+}
+

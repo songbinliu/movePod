@@ -1,13 +1,13 @@
-package main
+package util
 
 import (
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"github.com/golang/glog"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	api "k8s.io/client-go/pkg/api/v1"
 	kclient "k8s.io/client-go/kubernetes"
+	api "k8s.io/client-go/pkg/api/v1"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -36,7 +36,6 @@ func CopyPodInfo(oldPod, newPod *api.Pod) {
 	return
 }
 
-
 //--------------------------
 
 func printPods(pods *api.PodList) {
@@ -55,7 +54,7 @@ func printPods(pods *api.PodList) {
 	}
 }
 
-func listPod(client *kclient.Clientset) {
+func ListPod(client *kclient.Clientset) {
 	pods, err := client.CoreV1().Pods(api.NamespaceAll).List(metav1.ListOptions{})
 	if err != nil {
 		panic(err.Error())
@@ -65,7 +64,6 @@ func listPod(client *kclient.Clientset) {
 
 	glog.V(2).Info("test finish")
 }
-
 
 func copyPodInfoX(oldPod, newPod *api.Pod) {
 	//1. typeMeta -- full copy
@@ -104,8 +102,7 @@ func copyPodInfoX(oldPod, newPod *api.Pod) {
 	//4. status: won't copy status
 }
 
-
-func getParentInfo(pod *api.Pod) (string, string, error) {
+func ParseParentInfo(pod *api.Pod) (string, string, error) {
 	//1. check ownerReferences:
 	if pod.OwnerReferences != nil && len(pod.OwnerReferences) > 0 {
 		for _, owner := range pod.OwnerReferences {
@@ -138,8 +135,7 @@ func getParentInfo(pod *api.Pod) (string, string, error) {
 	return "", "", nil
 }
 
-
-func getKubeClient(masterUrl, kubeConfig string) *kclient.Clientset {
+func GetKubeClient(masterUrl, kubeConfig string) *kclient.Clientset {
 	if masterUrl == "" && kubeConfig == "" {
 		fmt.Println("must specify masterUrl or kubeConfig.")
 		return nil
@@ -166,8 +162,7 @@ func getKubeClient(masterUrl, kubeConfig string) *kclient.Clientset {
 	return clientset
 }
 
-
-func checkPodMoveHealth(client *kclient.Clientset, nameSpace, podName, nodeName string) error {
+func CheckPodMoveHealth(client *kclient.Clientset, nameSpace, podName, nodeName string) error {
 	podClient := client.CoreV1().Pods(nameSpace)
 
 	id := fmt.Sprintf("%v/%v", nameSpace, podName)
@@ -196,9 +191,9 @@ func checkPodMoveHealth(client *kclient.Clientset, nameSpace, podName, nodeName 
 	return nil
 }
 
-//clean the Pods created by Controller during move
-func cleanPendingPod(client *kclient.Clientset, nameSpace, schedulerName, parentKind, parentName string) error {
 
+//clean the Pods created by Controller while controller's scheduler is invalid.
+func CleanPendingPod(client *kclient.Clientset, nameSpace, schedulerName, parentKind, parentName string, highver bool) error {
 	podClient := client.CoreV1().Pods(nameSpace)
 
 	option := metav1.ListOptions{
@@ -207,7 +202,7 @@ func cleanPendingPod(client *kclient.Clientset, nameSpace, schedulerName, parent
 
 	pods, err := podClient.List(option)
 	if err != nil {
-		glog.Error("failed to cleanPendingPod: %s", err.Error())
+		glog.Error("failed to cleanPendingPod: %v", err)
 		return err
 	}
 
@@ -216,25 +211,31 @@ func cleanPendingPod(client *kclient.Clientset, nameSpace, schedulerName, parent
 	for i := range pods.Items {
 		pod := &(pods.Items[i])
 
-		if pod.Spec.SchedulerName != schedulerName {
+		//pod is being deleted
+		if pod.DeletionGracePeriodSeconds != nil {
 			continue
 		}
 
-		kind, pname, err1 := getParentInfo(pod)
+		sname := ParsePodSchedulerName(pod, highver)
+		if sname != schedulerName {
+			continue
+		}
+
+		kind, pname, err1 := ParseParentInfo(pod)
 		if err1 != nil || pname == "" {
 			continue
 		}
 
 		//clean all the pending Pod, not only for this operation.
-		if parentKind != kind { //&& parentName != pname {
+		if parentKind != kind {
+			//&& parentName != pname {
 			continue
 		}
 
 		glog.V(3).Infof("Begin to delete Pending pod:%s/%s", nameSpace, pod.Name)
 		err2 := podClient.Delete(pod.Name, delOption)
 		if err2 != nil {
-			glog.Error("failed ot delete pending pod:%s/%s: %s", nameSpace, pod.Name, err2.Error())
-			err = fmt.Errorf("%s; %s", err.Error(), err2.Error())
+			glog.Warningf("failed ot delete pending pod:%s/%s: %v", nameSpace, pod.Name, err2)
 		}
 	}
 

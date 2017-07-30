@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"fmt"
@@ -7,11 +7,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-
-	//metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	//client "k8s.io/client-go/kubernetes"
-	//"k8s.io/client-go/pkg/api/v1"
-
 )
 
 //compare two version strings, for example:
