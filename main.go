@@ -30,7 +30,7 @@ const (
 
 	podDeletionGracePeriodDefault int64 = 10
 	podDeletionGracePeriodMax int64 = 10
-	defaultSleep = time.Second
+	defaultSleep = time.Second * 3
 	defaultTimeOut = time.Second * 10
 	defaultRetryLess = 2
 	defaultRetryMore = 4
@@ -73,7 +73,7 @@ func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, pare
 	}
 
 	helper, err := NewMoveHelper(client, pod.Namespace, pod.Name, parentKind, parentName, noexistSchedulerName, highver)
-	if err == nil {
+	if err != nil {
 		glog.Errorf("move failed: %v", err)
 		return err
 	}

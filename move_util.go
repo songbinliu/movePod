@@ -24,12 +24,12 @@ func calcGracePeriod(pod *api.Pod) int64 {
 }
 
 // move pod nameSpace/podName to node nodeName
-func movePod(client *kclient.Clientset, pod *api.Pod, nodeName string, retryNum int) (*api.Pod, error) {
+func movePod(client *kclient.Clientset, pod *api.Pod, nodeName string, retryNum int) error {
 	podClient := client.CoreV1().Pods(pod.Namespace)
 	if podClient == nil {
 		err := fmt.Errorf("cannot get Pod client for nameSpace:%v", pod.Namespace)
 		glog.Error(err)
-		return nil, err
+		return err
 	}
 
 	//1. copy the original pod
@@ -49,7 +49,7 @@ func movePod(client *kclient.Clientset, pod *api.Pod, nodeName string, retryNum 
 		err = fmt.Errorf("move-failed: failed to delete original pod-%v: %v",
 			id, err)
 		glog.Error(err)
-		return nil, err
+		return err
 	}
 
 	//3. create (and bind) the new Pod
@@ -63,13 +63,13 @@ func movePod(client *kclient.Clientset, pod *api.Pod, nodeName string, retryNum 
 		err = fmt.Errorf("move-failed: failed to create new pod-%v: %v",
 			id, err)
 		glog.Error(err)
-		return nil, err
+		return err
 	}
 
 	glog.V(2).Infof("move-finished: %v from %v to %v",
 		id, pod.Spec.NodeName, nodeName)
 
-	return npod, nil
+	return nil
 }
 
 //---------------Move Helper---------------
