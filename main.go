@@ -25,8 +25,17 @@ var (
 const (
 	// a non-exist scheduler: make sure the pods won't be scheduled by default-scheduler during our moving
 	DefaultNoneExistSchedulerName = "turbo-none-exist-scheduler"
-	KindReplicationController     = "ReplicationController"
-	KindReplicaSet                = "ReplicaSet"
+	kindReplicationController = "ReplicationController"
+	kindReplicaSet = "ReplicaSet"
+
+	podDeletionGracePeriodDefault int64 = 10
+	podDeletionGracePeriodMax int64 = 10
+	defaultSleep = time.Second
+	defaultTimeOut = time.Second * 10
+	defaultRetryLess = 2
+	defaultRetryMore = 4
+
+	highK8sVersion = "1.6"
 )
 
 func setFlags() {
@@ -58,67 +67,37 @@ func addErrors(prefix string, err1, err2 error) error {
 
 // update the parent's scheduler before moving pod; then restore parent's scheduler
 func doSchedulerMove(client *kubernetes.Clientset, pod *v1.Pod, parentKind, parentName, nodeName string) error {
-	ver := compareVersion(k8sVersion, "1.6.0")
-	id := fmt.Sprintf("%v/%v", pod.Namespace, pod.Name)
+	highver := true
+	if CompareVersion(k8sVersion, highK8sVersion) < 0 {
+		highver = false
+	}
 
-	//2. update the schedulerName
-	var update func(*kubernetes.Clientset, string, string, string) (string, error)
-	switch parentKind {
-	case KindReplicationController:
-		glog.V(3).Infof("pod-%v parent is a ReplicationController-%v", id, parentName)
-		update = updateRCscheduler
-		if ver < 0 {
-			update = updateRCscheduler15
-		}
-	case KindReplicaSet:
-		glog.V(2).Infof("pod-%v parent is a ReplicaSet-%v", id, parentName)
-		update = updateRSscheduler
-		if ver < 0 {
-			update = updateRSscheduler15
-		}
-	default:
-		err := fmt.Errorf("unsupported parent-[%v] Kind-[%v]", parentName, parentKind)
-		glog.Warning(err.Error())
+	helper, err := NewMoveHelper(client, pod.Namespace, pod.Name, parentKind, parentName, noexistSchedulerName, highver)
+	if err == nil {
+		glog.Errorf("move failed: %v", err)
 		return err
 	}
 
-	noexist := noexistSchedulerName
-	check := checkSchedulerName
-	if ver < 0 {
-		check = checkSchedulerName15
+	//1. invalid the original scheduler
+	preScheduler, err := helper.UpdateScheduler(helper.schedulerNone, defaultRetryLess)
+	if err != nil {
+		glog.Errorf("move failed: %v", err)
+		return err
 	}
-	nameSpace := pod.Namespace
+	helper.SetScheduler(preScheduler)
+	defer func() {
+		helper.CleanUp()
+		cleanPendingPod(client, pod.Namespace, helper.schedulerNone, parentKind, parentName)
+	}()
 
-	preScheduler, err := update(client, nameSpace, parentName, noexist)
-	flag, err2 := check(client, parentKind, nameSpace, parentName, noexist);
-	if !flag {
-		//only check flag, to decide whether "restore" is needed.
-		prefix := fmt.Sprintf("move-failed: pod-[%v], parent-[%v]", id, parentName)
-		return addErrors(prefix, err, err2)
+	//Is this necessary?
+	if flag, err := helper.CheckScheduler(helper.schedulerNone, 1); err != nil || !flag {
+		glog.Errorf("move failed: failed to check scheduler.")
+		return fmt.Errorf("failed to check scheduler.")
 	}
 
-	restore := func() {
-		//check it again in case somebody has changed it back.
-		if flag, _ := check(client, parentKind, nameSpace, parentName, noexist); flag {
-			retryDuring(DefaultRetryMore, DefaultTimeOut, DefaultSleep, func() error{
-				_, err3 := update(client, nameSpace, parentName, preScheduler)
-				return err3
-			})
-		}
-
-		err := cleanPendingPod(client, nameSpace, noexist, parentKind, parentName)
-		if err != nil {
-			glog.Error("failed to clean pending pod for MoveAction:%v", err.Error())
-		}
-	}
-	defer restore()
-
-	//3. movePod
-	if err != nil || err2 != nil {
-		prefix := fmt.Sprintf("move-failed: pod-[%v], parent-[%v]", pod.Name, parentName)
-		return addErrors(prefix, err, err2)
-	}
-	return movePod(client, pod, nodeName, DefaultRetryLess)
+	//2. do the move
+	return movePod(client, pod, nodeName, defaultRetryLess)
 }
 
 func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) error {
@@ -151,16 +130,11 @@ func MovePod(client *kubernetes.Clientset, nameSpace, podName, nodeName string) 
 
 	//2.1 if pod is barely standalone pod, move it directly
 	if parentKind == "" {
-		return movePod(client, pod, nodeName, DefaultRetryLess)
+		return movePod(client, pod, nodeName, defaultRetryLess)
 	}
 
 	//2.2 if pod controlled by ReplicationController/ReplicaSet, then need to do more
 	return doSchedulerMove(client, pod, parentKind, parentName, nodeName)
-	//if compareVersion(k8sVersion, "1.6.0") < 0 {
-	//	return doSchedulerMove15(client, pod, parentKind, parentName, nodeName)
-	//} else {
-	//	return doSchedulerMove(client, pod, parentKind, parentName, nodeName)
-	//}
 }
 
 func main() {
