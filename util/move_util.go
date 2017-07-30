@@ -321,6 +321,10 @@ func (h *moveHelper2) UpdateScheduler(schedulerName string, retry int) (string, 
 		return result, fmt.Errorf("timeout")
 	}
 
+	if err != nil {
+		glog.Errorf("Failed to updateScheduler for pod[%s], parent[%s]", h.podName, h.controllerName)
+	}
+
 	return result, err
 }
 
@@ -345,7 +349,9 @@ func (h *moveHelper2) CleanUp() {
 		return
 	}
 
-	h.UpdateScheduler(h.scheduler, defaultRetryMore)
+	if _, err := h.UpdateScheduler(h.scheduler, defaultRetryMore); err != nil {
+		glog.Errorf("Clean up failed: failed to updateScheduler for pod[%s], parent[%s]", h.podName, h.controllerName)
+	}
 }
 
 // acquire a lock before manipulate the scheduler of the parentController
@@ -355,9 +361,11 @@ func (h *moveHelper2) Acquirelock() bool {
 	})
 
 	if !flag {
+		glog.V(3).Infof("Failed to get lock for pod[%s], parent[%s]", h.podName, h.controllerName)
 		return false
 	}
 
+	glog.V(3).Infof("Get lock for pod[%s], parent[%s]", h.podName, h.controllerName)
 	h.version = version
 	return true
 }
@@ -370,12 +378,14 @@ func (h *moveHelper2) Renewlock() bool {
 // release the lock of the parentController
 func (h *moveHelper2) Releaselock() {
 	h.emap.Del(h.key, h.version)
+	glog.V(3).Infof("Released lock for pod[%s], parent[%s]", h.podName, h.controllerName)
 }
 
 // the call back function, the lock should have already be acquired;
 // This callback function should do the minimum thing: restore the original scheduler
 // the pending pods should be deleted by other things.
 func (h *moveHelper2) lockCallBack() {
+	glog.V(3).Infof("localCallBack--Expired lock for pod[%s], parent[%s]", h.podName, h.controllerName)
 	// check whether need to do reset scheduler
 	if !(h.flag) {
 		return

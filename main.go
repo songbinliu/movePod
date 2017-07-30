@@ -107,7 +107,7 @@ func doSchedulerMove2(client *kclient.Clientset, pod *v1.Pod, parentKind, parent
 	helper.SetMap(lockMap)
 
 	//2. wait to get a lock
-	err = mvUtil.RetryDuring(1000, defaultWaitLockTimeOut, defaultSleep, func() error {
+	err = mvUtil.RetryDuring(1000, defaultWaitLockTimeOut, defaultSleep*5, func() error {
 		if !helper.Acquirelock() {
 			glog.V(2).Infof("failed to get lock for pod[%s], parent[%s]", pod.Name, parentName)
 			return fmt.Errorf("TryLater")
@@ -121,6 +121,7 @@ func doSchedulerMove2(client *kclient.Clientset, pod *v1.Pod, parentKind, parent
 		helper.CleanUp()
 		mvUtil.CleanPendingPod(client, pod.Namespace, noexist, parentKind, parentName, highver)
 	}()
+	glog.V(3).Infof("Got lock for pod[%s] from parent[%s]", pod.Name, parentName)
 
 	//3. invalidate the scheduler of the parentController
 	preScheduler, err := helper.UpdateScheduler(noexist, 1)
@@ -176,14 +177,15 @@ func movePods(client *kclient.Clientset, nameSpace, podNames, nodeName string) e
 	names := strings.Split(podNames, ",")
 	var wg sync.WaitGroup
 
-	wg.Add(len(names))
-	for _, podName := range names {
+	for _, pname := range names {
+		podName := strings.TrimSpace(pname)
+		if len(podName) == 0 {
+			continue
+		}
+		wg.Add(1)
+
 		go func() {
 			defer wg.Done()
-			podName = strings.TrimSpace(podName)
-			if len(podName) == 0 {
-				return
-			}
 			if _, err := movePod(client, nameSpace, podName, nodeName); err != nil {
 				glog.Errorf("move pod[%s] failed: %v", podName, err)
 				return
