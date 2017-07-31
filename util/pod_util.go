@@ -153,6 +153,9 @@ func GetKubeClient(masterUrl, kubeConfig string) *kclient.Clientset {
 	if err != nil {
 		panic(err.Error())
 	}
+
+	config.QPS = 20
+	config.Burst = 30
 	// creates the clientset
 	clientset, err := kclient.NewForConfig(config)
 	if err != nil {

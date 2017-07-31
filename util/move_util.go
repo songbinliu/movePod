@@ -15,8 +15,8 @@ const (
 	kindReplicationController     = "ReplicationController"
 	kindReplicaSet                = "ReplicaSet"
 
-	podDeletionGracePeriodDefault int64 = 10
-	podDeletionGracePeriodMax     int64 = 10
+	podDeletionGracePeriodDefault int64 = 0
+	podDeletionGracePeriodMax     int64 = 0
 	defaultSleep                        = time.Second * 3
 	defaultTimeOut                      = time.Second * 10
 	defaultRetryLess                    = 2
@@ -318,7 +318,7 @@ func (h *moveHelper2) UpdateScheduler(schedulerName string, retry int) (string, 
 	})
 
 	if !flag {
-		return result, fmt.Errorf("timeout")
+		return result, fmt.Errorf("Timeout")
 	}
 
 	if err != nil {

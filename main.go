@@ -33,7 +33,7 @@ const (
 	defaultSleep = time.Second * 10
 	defaultWaitLockTimeOut = time.Second * 100
 
-	defaultTTL = time.Second * 10
+	defaultTTL = time.Second * 30
 )
 
 //global var
@@ -107,14 +107,14 @@ func doSchedulerMove2(client *kclient.Clientset, pod *v1.Pod, parentKind, parent
 	helper.SetMap(lockMap)
 
 	//2. wait to get a lock
-	err = mvUtil.RetryDuring(1000, defaultWaitLockTimeOut, defaultSleep*5, func() error {
+	err = mvUtil.RetryDuring(1000, defaultWaitLockTimeOut, time.Second*30, func() error {
 		if !helper.Acquirelock() {
-			glog.V(2).Infof("failed to get lock for pod[%s], parent[%s]", pod.Name, parentName)
 			return fmt.Errorf("TryLater")
 		}
 		return nil
 	})
 	if err != nil {
+		glog.Errorf("move pod[%s] parent[%s] failed: failed to get lock.", pod.Name, parentName)
 		return nil, err
 	}
 	defer func() {

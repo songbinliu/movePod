@@ -5,7 +5,7 @@ k8sconf="configs/aws.kubeconfig.yaml"
 #k8sconf="configs/en119.kubeconfig.yaml"
 
 nameSpace="default"
-podName="mem-10-group-4nxq4,mem-10-group-kqkzq"
+podName="cpu-group-k3fdf,cpu-group-wltsp,mem-10-group-146z5,mem-500-group-txc65"
 master="ip-172-23-1-39.us-west-2.compute.internal"
 slave1="ip-172-23-1-92.us-west-2.compute.internal"
 slave2="ip-172-23-1-12.us-west-2.compute.internal"
