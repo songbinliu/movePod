@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	kindReplicationController     = "ReplicationController"
-	kindReplicaSet                = "ReplicaSet"
+	kindReplicationController = "ReplicationController"
+	kindReplicaSet            = "ReplicaSet"
 
 	podDeletionGracePeriodDefault int64 = 0
 	podDeletionGracePeriodMax     int64 = 0
@@ -82,8 +82,6 @@ func MovePod(client *kclient.Clientset, pod *api.Pod, nodeName string, retryNum 
 
 	return npod, nil
 }
-
-
 
 //---------------Move Helper---------------
 

@@ -194,7 +194,6 @@ func CheckPodMoveHealth(client *kclient.Clientset, nameSpace, podName, nodeName 
 	return nil
 }
 
-
 //clean the Pods created by Controller while controller's scheduler is invalid.
 func CleanPendingPod(client *kclient.Clientset, nameSpace, schedulerName, parentKind, parentName string, highver bool) error {
 	podClient := client.CoreV1().Pods(nameSpace)

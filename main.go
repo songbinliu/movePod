@@ -3,11 +3,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"strings"
-	"time"
-	"sync"
 	"github.com/golang/glog"
 	mvUtil "movePod/util"
+	"strings"
+	"sync"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kclient "k8s.io/client-go/kubernetes"
@@ -28,10 +28,10 @@ var (
 const (
 	// a non-exist scheduler: make sure the pods won't be scheduled by default-scheduler during our moving
 	DefaultNoneExistSchedulerName = "turbo-none-exist-scheduler"
-	highK8sVersion = "1.6"
-	defaultRetryLess                    = 2
-	defaultSleep = time.Second * 10
-	defaultWaitLockTimeOut = time.Second * 100
+	highK8sVersion                = "1.6"
+	defaultRetryLess              = 2
+	defaultSleep                  = time.Second * 10
+	defaultWaitLockTimeOut        = time.Second * 100
 
 	defaultTTL = time.Second * 30
 )
@@ -89,7 +89,6 @@ func doSchedulerMove(client *kclient.Clientset, pod *v1.Pod, parentKind, parentN
 	//2. do the move
 	return mvUtil.MovePod(client, pod, nodeName, defaultRetryLess)
 }
-
 
 // move the pods controlled by ReplicationController/ReplicaSet with concurrent control
 func doSchedulerMove2(client *kclient.Clientset, pod *v1.Pod, parentKind, parentName, nodeName string) (*v1.Pod, error) {
@@ -229,6 +228,5 @@ func main() {
 		glog.Errorf("move pod failed: %v/%v, %v", nameSpace, podName, err.Error())
 		return
 	}
-
 
 }

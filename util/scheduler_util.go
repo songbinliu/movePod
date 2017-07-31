@@ -265,4 +265,3 @@ func ParsePodSchedulerName(pod *api.Pod, highver bool) string {
 
 	return ""
 }
-
