@@ -44,7 +44,8 @@ func printPods(pods *api.PodList) {
 		pods.Kind,
 		pods.ResourceVersion)
 
-	for _, pod := range pods.Items {
+	for i := range pods.Items {
+		pod := &(pods.Items[i])
 		fmt.Printf("%s/%s, phase:%s, node.Name:%s, host:%s\n",
 			pod.Namespace,
 			pod.Name,
