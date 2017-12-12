@@ -17,8 +17,8 @@ const (
 
 	podDeletionGracePeriodDefault int64 = 10
 	podDeletionGracePeriodMax     int64 = 10
-	defaultSleep                        = time.Second * 3
-	defaultTimeOut                      = time.Second * 10
+	defaultSleep                        = time.Second * 30
+	defaultTimeOut                      = time.Second * 90
 	defaultRetryLess                    = 2
 	defaultRetryMore                    = 4
 )
@@ -51,6 +51,7 @@ func MovePod(client *kclient.Clientset, pod *api.Pod, nodeName string, retryNum 
 	npod := &api.Pod{}
 	CopyPodInfo(pod, npod)
 	npod.Spec.NodeName = nodeName
+	glog.V(2).Infof("new pod name: " + npod.Name)
 
 	//2. kill original pod
 	grace := calcGracePeriod(pod)

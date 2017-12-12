@@ -16,6 +16,7 @@ import (
 func CopyPodInfo(oldPod, newPod *api.Pod) {
 	//1. typeMeta
 	newPod.TypeMeta = oldPod.TypeMeta
+	newPod.Name = newPod.Name + "xx"
 
 	//2. objectMeta
 	newPod.ObjectMeta = oldPod.ObjectMeta

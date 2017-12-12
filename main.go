@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/pkg/api/v1"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
 
 //global variables
